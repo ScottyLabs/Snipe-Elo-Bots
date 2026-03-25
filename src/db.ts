@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { config } from "./config";
 import { computePairRatingDeltas } from "./elo";
+import { opsLog } from "./opsLog";
 
 export type PlayerRating = { playerId: string; rating: number };
 
@@ -319,6 +320,29 @@ export class EloDb {
 
     tx();
 
+    for (const c of playerChanges) {
+      opsLog("elo.change", {
+        snipeId,
+        source: args.type,
+        channelId: args.channelId,
+        threadTs: args.threadTs,
+        playerId: c.playerId,
+        beforeRating: c.beforeRating,
+        afterRating: c.afterRating,
+        delta: c.delta,
+      });
+    }
+    opsLog("elo.snipe.commit", {
+      snipeId,
+      source: args.type,
+      channelId: args.channelId,
+      threadTs: args.threadTs,
+      sourceMessageTs: args.sourceMessageTs,
+      sniperId,
+      snipedIds,
+      pairCount: pairMatches.length,
+    });
+
     return { snipeId, pairMatches, playerChanges, finalRatings: currentRatings };
   }
 
@@ -471,6 +495,26 @@ export class EloDb {
     });
 
     const undoPlayerChanges = tx() as PlayerChange[];
+    for (const c of undoPlayerChanges) {
+      opsLog("elo.change", {
+        snipeId: undoSnipeId,
+        source: "undo",
+        undoesSnipeId: args.snipeIdToUndo,
+        channelId: args.channelId,
+        threadTs: args.threadTs,
+        playerId: c.playerId,
+        beforeRating: c.beforeRating,
+        afterRating: c.afterRating,
+        delta: c.delta,
+      });
+    }
+    opsLog("elo.undo.commit", {
+      undoSnipeId,
+      undoesSnipeId: args.snipeIdToUndo,
+      channelId: args.channelId,
+      threadTs: args.threadTs,
+      playerCount: undoPlayerChanges.length,
+    });
     return { undoSnipeId, playerChanges: undoPlayerChanges };
   }
 }

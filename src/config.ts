@@ -34,6 +34,10 @@ export const config = {
     implicitSnipeEmoji: "dart",
     undoCommand: (process.env.UNDO_COMMAND ?? "removesnipe").toLowerCase(),
     makeupCommand: (process.env.MAKEUP_COMMAND ?? "makeupsnipe").toLowerCase(),
+    /** If false, mentioning others counts as a snipe without an image (easier testing / alternate rules). */
+    snipeRequireImage: !["0", "false", "no", "off"].includes(
+      (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()
+    ),
   },
   storage: {
     dbPath: process.env.DB_PATH ?? "./snipe-elo.sqlite3",

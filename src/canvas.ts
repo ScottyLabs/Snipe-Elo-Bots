@@ -1,5 +1,6 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
+import { opsLog } from "./opsLog";
 
 function slackErrorCode(err: unknown): string | undefined {
   const e = err as { data?: { error?: string } };
@@ -82,6 +83,7 @@ export async function ensureLeaderboardCanvas(params: {
   const canvasId = created?.canvas_id ?? created?.id;
   if (!canvasId) throw new Error("failed_to_create_canvas");
   db.setMeta("leaderboard_canvas_id", canvasId);
+  opsLog("canvas.leaderboard.created", { canvasId, title });
   return canvasId;
 }
 
@@ -102,6 +104,10 @@ export async function updateLeaderboardCanvas(params: {
         document_content: { type: "markdown", markdown },
       },
     ],
+  });
+  opsLog("canvas.leaderboard.updated", {
+    canvasId,
+    playerCount: players.length,
   });
 }
 
