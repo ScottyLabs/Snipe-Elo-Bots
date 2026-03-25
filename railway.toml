@@ -1,0 +1,11 @@
+# https://docs.railway.app/deploy/config-as-code
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+# Avoid `npm start` wrapper so signals and logs are cleaner; health check hits Bolt customRoutes.
+startCommand = "node dist/index.js"
+healthcheckPath = "/health"
+# Seconds (Railway default is 300; set explicitly so deploys aren’t killed during slow cold start).
+healthcheckTimeout = 300

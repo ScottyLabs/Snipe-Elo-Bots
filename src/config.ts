@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+// Avoid noisy "injecting env (0) from .env" on Railway (vars come from the platform, not a file).
+dotenv.config({ quiet: true });
 
 function requireEnv(name: string): string {
   const v = process.env[name];

@@ -59,10 +59,17 @@ export async function startSlackBot(params: {
   db: EloDb;
   logger?: Console;
 }): Promise<void> {
-  const appTokenRaw = process.env.SLACK_APP_TOKEN;
+  const appTokenRaw =
+    process.env.SLACK_APP_TOKEN ?? process.env.SLACK_SOCKET_APP_TOKEN ?? process.env.SLACK_XAPP_TOKEN;
   const appToken =
     typeof appTokenRaw === "string" && appTokenRaw.trim().length > 0 ? appTokenRaw.trim() : undefined;
   const useSocketMode = Boolean(appToken);
+
+  console.log(
+    `[snipe-elo] PORT=${config.server.port} socketMode=${useSocketMode} appToken=${
+      useSocketMode ? "set" : "MISSING — set SLACK_APP_TOKEN in Railway (xapp-…, connections:write)"
+    }`
+  );
 
   const app = new App({
     token: config.slack.botToken,
