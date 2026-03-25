@@ -1,0 +1,6 @@
+node_modules
+dist
+.env
+snipe-elo.sqlite3
+.DS_Store
+
