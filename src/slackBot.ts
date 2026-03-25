@@ -307,29 +307,7 @@ export async function startSlackBot(params: {
       const sniperId = userId;
       const snipedIds = mentionedIds.filter((id) => id !== sniperId);
 
-      if (config.slackOps.snipeRequireImage && !hasImage) {
-        if (snipedIds.length > 0) {
-          opsLog("command.implicit_snipe.skipped", {
-            reason: "require_image_no_image",
-            userId,
-            channelId,
-            messageTs: ts,
-            snipedIds,
-            subtype: (event as any).subtype ?? null,
-          });
-          await client.chat.postMessage({
-            channel: channelId,
-            thread_ts: ts,
-            text:
-              "I see @mentions but no usable image on *this* message. Put the photo **in the same message** as the mentions (don’t send @someone and the screenshot as two separate messages). " +
-              "Or set `SNIPE_REQUIRE_IMAGE=false` to allow mention-only snipes, or use `makeupsnipe`. " +
-              "Tip: add the **files:read** bot scope if images still aren’t detected.",
-          });
-        }
-        return;
-      }
-
-      if (!hasImage && config.slackOps.snipeRequireImage) return;
+      if (config.slackOps.snipeRequireImage && !hasImage) return;
 
       if (snipedIds.length === 0) {
         if (hasImage) {
