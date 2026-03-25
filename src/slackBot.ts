@@ -1,4 +1,4 @@
-import { App } from "@slack/bolt";
+import { App, type CustomRoute } from "@slack/bolt";
 import { config } from "./config";
 import { EloDb } from "./db";
 import { ensureLeaderboardCanvas, updateLeaderboardCanvas } from "./canvas";
@@ -35,6 +35,26 @@ async function resolveUserTokensToIds(args: { client: any; tokens: string[] }): 
   return uniquePreserveOrder(ids);
 }
 
+/** Railway (and similar) probe $PORT; Socket Mode otherwise opens no HTTP server. */
+const railwayHealthRoutes: CustomRoute[] = [
+  {
+    path: "/",
+    method: "GET",
+    handler: (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("ok");
+    },
+  },
+  {
+    path: "/health",
+    method: "GET",
+    handler: (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("ok");
+    },
+  },
+];
+
 export async function startSlackBot(params: {
   db: EloDb;
   logger?: Console;
@@ -46,6 +66,7 @@ export async function startSlackBot(params: {
     appToken: process.env.SLACK_APP_TOKEN,
     // For HTTP mode (non-socket-mode).
     port: config.server.port,
+    customRoutes: railwayHealthRoutes,
   });
 
   const logger = params.logger ?? console;
