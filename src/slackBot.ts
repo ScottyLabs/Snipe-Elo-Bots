@@ -3,7 +3,13 @@ import { config } from "./config";
 import { EloDb } from "./db";
 import { ensureLeaderboardCanvas, updateLeaderboardCanvas } from "./canvas";
 import { formatSnipeConfirmation, formatUndoConfirmation } from "./snipe";
-import { isLikelyImageMessage, normalizeCommandText, parseMentionedUserIds, parseUserToken } from "./parse";
+import {
+  isLikelyImageMessage,
+  isProcessableUserMessageEvent,
+  normalizeCommandText,
+  parseMentionedUserIds,
+  parseUserToken,
+} from "./parse";
 
 type Mentioned = { sniperId: string; snipedIds: string[] };
 
@@ -112,20 +118,18 @@ export async function startSlackBot(params: {
       const channelId: string | undefined = (event as any).channel;
       if (!channelId || channelId !== config.slack.channelId) return;
 
-      const subtype = (event as any).subtype;
-      const botId = (event as any).bot_id;
-      if (subtype || botId) return;
+      if (!isProcessableUserMessageEvent(event)) return;
 
-      const text = normalizeCommandText((event as any).text);
       const userId = (event as any).user as string | undefined;
       const ts = (event as any).ts as string | undefined;
       const threadTs = (event as any).thread_ts as string | undefined;
-      if (!text || !userId || !ts) return;
+      if (!userId || !ts) return;
 
+      const text = normalizeCommandText((event as any).text);
       const lower = text.toLowerCase();
 
       // Undo command in thread.
-      if (lower.startsWith(config.slackOps.undoCommand) && threadTs) {
+      if (text && lower.startsWith(config.slackOps.undoCommand) && threadTs) {
         try {
           const snipe = params.db.getLatestUndoableSnipeEventForThread(threadTs);
           if (!snipe) {
@@ -168,7 +172,7 @@ export async function startSlackBot(params: {
       }
 
       // Makeupsnipe command.
-      if (lower.startsWith(config.slackOps.makeupCommand)) {
+      if (text && lower.startsWith(config.slackOps.makeupCommand)) {
         try {
           const parts = text.split(/\s+/).filter(Boolean);
           if (parts.length < 3) {
@@ -221,7 +225,16 @@ export async function startSlackBot(params: {
 
       const sniperId = userId;
       const snipedIds = mentionedIds.filter((id) => id !== sniperId);
-      if (snipedIds.length === 0) return;
+      if (snipedIds.length === 0) {
+        await client.chat.postMessage({
+          channel: channelId,
+          thread_ts: ts,
+          text:
+            "I see an image and a mention, but only you were mentioned. " +
+            "Mention everyone who was *sniped* in the same message (the photographer is the sniper automatically).",
+        });
+        return;
+      }
 
       try {
         await handleApplySnipe({

@@ -40,13 +40,41 @@ export function normalizeCommandText(text: string | undefined | null): string {
   return (text ?? "").trim();
 }
 
+const IMAGE_FILETYPES = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "heic",
+  "bmp",
+  "tif",
+  "tiff",
+  "svg",
+]);
+
+function fileLooksLikeImage(f: any): boolean {
+  if (!f || typeof f !== "object") return false;
+  const mimetype = String(f.mimetype ?? "");
+  const filetype = String(f.filetype ?? "").toLowerCase();
+  if (mimetype.startsWith("image/")) return true;
+  if (filetype.startsWith("image")) return true;
+  return IMAGE_FILETYPES.has(filetype);
+}
+
 export function isLikelyImageMessage(event: any): boolean {
-  // Slack message payload includes files[] for uploaded images.
   const files = Array.isArray(event?.files) ? event.files : [];
-  return files.some((f: any) => {
-    const mimetype = (f?.mimetype ?? "") as string;
-    const filetype = (f?.filetype ?? "") as string;
-    return mimetype.startsWith("image/") || filetype.startsWith("image/");
-  });
+  if (files.some((f: any) => fileLooksLikeImage(f))) return true;
+  // file_share events often use a singular `file` object instead of `files[]`.
+  if (fileLooksLikeImage(event?.file)) return true;
+  return false;
+}
+
+/** Slack uses subtypes like file_share for uploads; we must not drop those for snipe detection. */
+export function isProcessableUserMessageEvent(event: any): boolean {
+  if (event?.bot_id) return false;
+  const st = event?.subtype as string | undefined;
+  if (st == null || st === "") return true;
+  return st === "file_share" || st === "thread_broadcast";
 }
 

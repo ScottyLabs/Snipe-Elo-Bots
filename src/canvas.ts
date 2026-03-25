@@ -1,6 +1,22 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
 
+function slackErrorCode(err: unknown): string | undefined {
+  const e = err as { data?: { error?: string } };
+  return e?.data?.error;
+}
+
+/** Public channels: join so canvases.create(channel_id) works. Private: user must /invite the bot. */
+async function ensureBotInChannel(client: { conversations: { join: (a: { channel: string }) => Promise<unknown> } }, channelId: string): Promise<void> {
+  try {
+    await client.conversations.join({ channel: channelId });
+  } catch (err: unknown) {
+    const code = slackErrorCode(err);
+    if (code === "already_in_channel") return;
+    // Missing channels:join, private channel, etc. — canvas create will error if still not a member.
+  }
+}
+
 export function renderLeaderboardMarkdown(players: PlayerRating[]): string {
   const rows = players.slice(0, config.leaderboard.topN);
 
@@ -42,13 +58,27 @@ export async function ensureLeaderboardCanvas(params: {
   }
 
   // @slack/web-api exposes canvases.create / edit but not canvases.list; create a new canvas.
+  await ensureBotInChannel(client, config.slack.channelId);
+
   const players = db.getAllPlayersSorted();
   const markdown = renderLeaderboardMarkdown(players);
-  const created = await client.canvases.create({
-    channel_id: config.slack.channelId,
-    title,
-    document_content: { type: "markdown", markdown },
-  });
+  let created: { canvas_id?: string; id?: string };
+  try {
+    created = await client.canvases.create({
+      channel_id: config.slack.channelId,
+      title,
+      document_content: { type: "markdown", markdown },
+    });
+  } catch (err: unknown) {
+    if (slackErrorCode(err) === "not_in_channel") {
+      throw new Error(
+        `Slack not_in_channel: invite the bot to the snipe channel (e.g. /invite @YourBot). ` +
+          `For public channels you can also add the bot scope channels:join so it can join automatically. ` +
+          `Channel ID: ${config.slack.channelId}`
+      );
+    }
+    throw err;
+  }
   const canvasId = created?.canvas_id ?? created?.id;
   if (!canvasId) throw new Error("failed_to_create_canvas");
   db.setMeta("leaderboard_canvas_id", canvasId);
