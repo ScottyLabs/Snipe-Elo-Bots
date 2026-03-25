@@ -1,5 +1,7 @@
 import Database from "better-sqlite3";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { config } from "./config";
 import { computePairRatingDeltas } from "./elo";
 
@@ -45,7 +47,15 @@ export class EloDb {
   private db: Database.Database;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath);
+    // better-sqlite3 does not create parent directories; Railway volume paths
+    // like /data/snipe.sqlite fail if /data is missing until first mount step.
+    let openPath = dbPath;
+    if (dbPath && dbPath !== ":memory:") {
+      openPath = path.resolve(dbPath);
+      const dir = path.dirname(openPath);
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    this.db = new Database(openPath);
     this.db.pragma("journal_mode = WAL");
     this.init();
   }
