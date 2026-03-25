@@ -59,11 +59,16 @@ export async function startSlackBot(params: {
   db: EloDb;
   logger?: Console;
 }): Promise<void> {
+  const appTokenRaw = process.env.SLACK_APP_TOKEN;
+  const appToken =
+    typeof appTokenRaw === "string" && appTokenRaw.trim().length > 0 ? appTokenRaw.trim() : undefined;
+  const useSocketMode = Boolean(appToken);
+
   const app = new App({
     token: config.slack.botToken,
     signingSecret: config.slack.signingSecret,
-    socketMode: Boolean(process.env.SLACK_APP_TOKEN),
-    appToken: process.env.SLACK_APP_TOKEN,
+    socketMode: useSocketMode,
+    appToken,
     // For HTTP mode (non-socket-mode).
     port: config.server.port,
     customRoutes: railwayHealthRoutes,
@@ -371,14 +376,27 @@ export async function startSlackBot(params: {
     }
   });
 
-  await ensureCanvasOnce();
-
-  opsLog("service.ready", {
+  // Bind HTTP (health checks + /slack/events) BEFORE Slack API calls like canvases.create.
+  // Otherwise Railway probes $PORT while we’re still in ensureLeaderboardCanvas → SIGTERM.
+  opsLog("service.listen", {
     port: config.server.port,
-    socketMode: Boolean(process.env.SLACK_APP_TOKEN),
+    socketMode: useSocketMode,
+    hasAppToken: useSocketMode,
     channelId: config.slack.channelId,
   });
+  if (!useSocketMode) {
+    opsLog("service.mode.http", {
+      hint: "Set SLACK_APP_TOKEN in Railway for Socket Mode, or set Event Subscriptions Request URL to https://<your-host>/slack/events",
+    });
+  }
   logger.log(`Starting Slack bot on port ${config.server.port}`);
   await app.start(config.server.port);
+
+  void ensureCanvasOnce().catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`Leaderboard canvas warmup failed (bot is up; first snipe may retry): ${msg}`);
+    opsLog("canvas.ensure.startup_failed", { error: msg });
+  });
+  opsLog("service.ready", { port: config.server.port, socketMode: useSocketMode });
 }
 

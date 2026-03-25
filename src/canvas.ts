@@ -49,16 +49,23 @@ export async function ensureLeaderboardCanvas(params: {
   const { client, db } = params;
   const title = config.leaderboard.title;
 
-  const existing = db.getMeta("leaderboard_canvas_id");
-  if (existing) return existing;
-
+  // Env wins over SQLite so redeploys / empty DB still reuse the same canvas (only edits, no new create).
   const fromEnv = config.leaderboard.canvasIdOverride;
   if (fromEnv) {
-    db.setMeta("leaderboard_canvas_id", fromEnv);
+    const stored = db.getMeta("leaderboard_canvas_id");
+    if (stored !== fromEnv) {
+      db.setMeta("leaderboard_canvas_id", fromEnv);
+      if (stored) {
+        opsLog("canvas.leaderboard.id_source", { source: "env_override", previousCanvasId: stored, canvasId: fromEnv });
+      }
+    }
     return fromEnv;
   }
 
-  // @slack/web-api exposes canvases.create / edit but not canvases.list; create a new canvas.
+  const existing = db.getMeta("leaderboard_canvas_id");
+  if (existing) return existing;
+
+  // No env id and none in DB: create once, then all later updates use canvases.edit only.
   await ensureBotInChannel(client, config.slack.channelId);
 
   const players = db.getAllPlayersSorted();
