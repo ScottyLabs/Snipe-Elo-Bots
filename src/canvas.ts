@@ -35,7 +35,7 @@ export function renderLeaderboardMarkdown(players: PlayerRating[]): string {
   for (let i = 0; i < rows.length; i++) {
     const p = rows[i];
     const rank = i + 1;
-    const playerLabel = `<!@${p.playerId}>`;
+    const playerLabel = `![](@${p.playerId})`;
     lines.push(`| ${rank} | ${playerLabel} | ${p.rating} |`);
   }
 

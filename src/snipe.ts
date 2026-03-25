@@ -8,7 +8,7 @@ export function formatSigned(n: number): string {
 export function formatPlayerListElo(playerChanges: PlayerChange[]): string {
   // Stable order: show higher ELO first for readability.
   const byAfter = [...playerChanges].sort((a, b) => b.afterRating - a.afterRating);
-  return byAfter.map((c) => `<!@${c.playerId}>: ${c.afterRating}`).join("\n");
+  return byAfter.map((c) => `<@${c.playerId}>: ${c.afterRating}`).join("\n");
 }
 
 export function formatSnipeConfirmation(params: {
@@ -20,12 +20,12 @@ export function formatSnipeConfirmation(params: {
   const { sniperId, pairMatches, playerChanges, kind } = params;
   const header =
     kind === "makeup"
-      ? `Snipe recorded (makeup) by <!@${sniperId}>`
-      : `Snipe recorded by <!@${sniperId}>`;
+      ? `Snipe recorded (makeup) by <@${sniperId}>`
+      : `Snipe recorded by <@${sniperId}>`;
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
-    return `- <!@${m.snipedId}>: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}.`;
+    return `- <@${m.snipedId}>: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}.`;
   });
 
   return [
