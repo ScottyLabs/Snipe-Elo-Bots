@@ -35,16 +35,13 @@ export async function ensureLeaderboardCanvas(params: {
   const existing = db.getMeta("leaderboard_canvas_id");
   if (existing) return existing;
 
-  // Try to find an existing canvas by title.
-  const listed = await client.canvases.list();
-  const canvases: any[] = listed?.canvases ?? listed?.data ?? [];
-  const match = canvases.find((c) => c?.title === title);
-  if (match?.id) {
-    db.setMeta("leaderboard_canvas_id", match.id);
-    return match.id as string;
+  const fromEnv = config.leaderboard.canvasIdOverride;
+  if (fromEnv) {
+    db.setMeta("leaderboard_canvas_id", fromEnv);
+    return fromEnv;
   }
 
-  // Create a new one tabbed into the configured channel.
+  // @slack/web-api exposes canvases.create / edit but not canvases.list; create a new canvas.
   const players = db.getAllPlayersSorted();
   const markdown = renderLeaderboardMarkdown(players);
   const created = await client.canvases.create({

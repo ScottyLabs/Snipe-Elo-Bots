@@ -27,6 +27,8 @@ export const config = {
   leaderboard: {
     title: process.env.LEADERBOARD_CANVAS_TITLE ?? "ELO Leaderboard",
     topN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
+    /** If set, use this canvas instead of creating a new one (Slack SDK has no canvases.list). */
+    canvasIdOverride: process.env.LEADERBOARD_CANVAS_ID?.trim() || null,
   },
   slackOps: {
     implicitSnipeEmoji: "dart",
