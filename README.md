@@ -43,7 +43,7 @@ Set **`SLACK_TEXT_COMMANDS_FALLBACK=true`**. In the snipe channel you can then s
 | Plain text | Notes |
 |------------|--------|
 | `leaderboard` / `show_leaderboard` | Bot replies in the thread under your message. |
-| `removesnipe` | Send **inside the snipe thread** (same as slash behavior). |
+| `removesnipe` | **Always works** in the snipe thread (no env flag). Slack does not run custom `/removesnipe` from thread composers—type plain `removesnipe` there. |
 | `makeupsnipe <sniper> <sniped…>` | Same arguments as slash; mentions as `<@U…>`. |
 | `adjustelo <user> <delta>` | Same allowlist as slash (`ADJUSTELO_ALLOWED_SLACK_USER_IDS`). |
 
@@ -57,7 +57,7 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 |--------|----------------------|
 | `/leaderboard` | Show ELO leaderboard in channel |
 | `/show_leaderboard` | Same as `/leaderboard` (alias) |
-| `/removesnipe` | Undo last snipe in this thread |
+| `/removesnipe` | Undo last snipe in this thread (works from **main channel** only; in threads use plain `removesnipe`—Slack blocks `/` commands there) |
 | `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
 | `/adjustelo` | Args: `<user> <delta>` (integer). **Slack:** only user IDs in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` (default `U09E6EHA5R8`). |
 
@@ -98,7 +98,9 @@ When detected, the bot will:
 
 ## Undo
 
-Run **`/removesnipe`** from **inside the snipe thread** (open the thread under the bot confirmation, then invoke the slash command there). The bot posts the undo result in the thread and refreshes the canvas.
+**In the snipe thread:** Slack’s client does not send custom slash commands from thread composers—you’ll see “not supported in threads.” Instead, send a **plain message** `removesnipe` (no `/`) in that thread. The bot posts the undo in the thread and refreshes the canvas.
+
+**From the main channel:** **`/removesnipe`** is delivered only when invoked outside a thread; you must still target the correct thread context (Slack may not associate it with a snipe—prefer plain `removesnipe` inside the thread).
 
 ## Make up a snipe
 

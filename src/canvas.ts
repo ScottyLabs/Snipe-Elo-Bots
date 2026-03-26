@@ -1,7 +1,7 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
 import { opsLog } from "./opsLog";
-import { escapeSlackTableCell, resolveSlackDisplayNames } from "./slackDisplayNames";
+import { escapeSlackTableCell, takeTopSlackHumanLeaderboard } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
 
 function slackErrorCode(err: unknown): string | undefined {
@@ -67,12 +67,13 @@ export async function ensureLeaderboardCanvas(params: {
   // No env id and none in DB: create once, then all later updates use canvases.edit only.
   await ensureBotInChannel(client, config.slack.channelId);
 
-  const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const nameMap = await resolveSlackDisplayNames(
+  const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
+  const { players, displayNames } = await takeTopSlackHumanLeaderboard(
     client,
-    players.map((p) => p.playerId)
+    sorted,
+    config.leaderboard.topN
   );
-  const markdown = renderLeaderboardMarkdown(players, nameMap);
+  const markdown = renderLeaderboardMarkdown(players, displayNames);
   let created: { canvas_id?: string; id?: string };
   try {
     created = await client.canvases.create({
@@ -102,12 +103,13 @@ export async function updateLeaderboardCanvas(params: {
   canvasId: string;
 }): Promise<void> {
   const { client, db, canvasId } = params;
-  const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const nameMap = await resolveSlackDisplayNames(
+  const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
+  const { players, displayNames } = await takeTopSlackHumanLeaderboard(
     client,
-    players.map((p) => p.playerId)
+    sorted,
+    config.leaderboard.topN
   );
-  const markdown = renderLeaderboardMarkdown(players, nameMap);
+  const markdown = renderLeaderboardMarkdown(players, displayNames);
 
   await client.canvases.edit({
     canvas_id: canvasId,

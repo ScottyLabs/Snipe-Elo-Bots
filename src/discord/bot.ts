@@ -19,9 +19,31 @@ import {
   formatUndoConfirmation,
 } from "./formatDiscord";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
-import { escapeDiscordMarkdownChunk, resolveDiscordDisplayNames } from "../discordDisplayNames";
+import { escapeDiscordMarkdownChunk, takeTopDiscordHumanLeaderboard } from "../discordDisplayNames";
+import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 
 const DART = "🎯";
+
+/** Non-sniper mentions that resolve to human users (fetch on cache miss). */
+async function discordHumanSnipedIds(
+  message: Message,
+  sniperId: string,
+  mentionedIds: string[]
+): Promise<{ humanSniped: string[]; mentionedSomeoneBesideSniper: boolean }> {
+  const candidates = mentionedIds.filter((id) => id !== sniperId);
+  const humanSniped: string[] = [];
+  for (const id of candidates) {
+    const u =
+      message.mentions.users.get(id) ?? (await message.client.users.fetch(id).catch(() => null));
+    if (!u) {
+      humanSniped.push(id);
+      continue;
+    }
+    if (u.bot) continue;
+    humanSniped.push(id);
+  }
+  return { humanSniped, mentionedSomeoneBesideSniper: candidates.length > 0 };
+}
 
 function chunkLines(lines: string[], maxLen = 1900): string[] {
   const chunks: string[] = [];
@@ -41,14 +63,15 @@ function chunkLines(lines: string[], maxLen = 1900): string[] {
 
 async function renderLeaderboardText(db: EloDb, guild: Guild): Promise<string[]> {
   const guildId = guild.id;
-  const players = db.getAllPlayersSorted(guildId).slice(0, discordConfig.leaderboardTopN);
+  const sorted = db.getAllPlayersSorted(guildId);
+  const { players, nameMap } = await takeTopDiscordHumanLeaderboard(
+    guild,
+    sorted,
+    discordConfig.leaderboardTopN
+  );
   const base = discordConfig.leaderboardTitle;
   const title = guild.name ? `${guild.name} — ${base}` : base;
   if (players.length === 0) return [`**${title}**\n${L.leaderboardEmptyFallback()}`];
-  const nameMap = await resolveDiscordDisplayNames(
-    guild,
-    players.map((p) => p.playerId)
-  );
   const lines: string[] = [`**${title}**`, ""];
   let rank = 1;
   for (const p of players) {
@@ -135,6 +158,16 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
 
   client.once(Events.ClientReady, async (c) => {
     console.log(`[snipe-elo-discord] Logged in as ${c.user.tag}`);
+    try {
+      const purged = await purgeDiscordBotPlayersFromDb(db, c);
+      if (purged > 0) console.log(`[snipe-elo-discord] Purged ${purged} bot ELO row(s) from SQLite`);
+    } catch (e) {
+      console.error("[snipe-elo-discord] Bot ELO purge failed:", e);
+      opsLog("elo.purge_bot_players.failed", {
+        platform: "discord",
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
     const rest = new REST().setToken(discordConfig.token);
     const commands = [
       new SlashCommandBuilder()
@@ -266,6 +299,17 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       await interaction.deferReply();
 
       try {
+        if (sniper.bot) {
+          await interaction.editReply({ content: L.snipeMakeupIncludesBot() });
+          return;
+        }
+        for (const id of snipedIds) {
+          const u = await interaction.client.users.fetch(id).catch(() => null);
+          if (!u || u.bot) {
+            await interaction.editReply({ content: L.snipeMakeupIncludesBot() });
+            return;
+          }
+        }
         await handleApplySnipeDiscord({
           guildId: interaction.guild.id,
           type: "makeup",
@@ -300,6 +344,10 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       await interaction.deferReply();
 
       try {
+        if (target.bot) {
+          await interaction.editReply({ content: L.adjustTargetIsBot() });
+          return;
+        }
         const change = db.adjustPlayerRating({
           guildId: interaction.guild.id,
           playerId: target.id,
@@ -331,12 +379,20 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       if (mentioned.length === 0) return;
 
       const sniperId = message.author.id;
-      const snipedIds = mentioned.filter((id) => id !== sniperId);
+      const { humanSniped, mentionedSomeoneBesideSniper } = await discordHumanSnipedIds(
+        message,
+        sniperId,
+        mentioned
+      );
       const hasImage = messageHasImageAttachment(message);
 
       if (discordConfig.snipeRequireImage && !hasImage) return;
 
-      if (snipedIds.length === 0) {
+      if (humanSniped.length === 0) {
+        if (mentionedSomeoneBesideSniper) {
+          await message.reply({ content: L.snipeImplicitBotsOnlyDiscord() });
+          return;
+        }
         if (hasImage) {
           await message.reply({
             content: L.implicitSnipeOnlySelfDiscord(),
@@ -352,7 +408,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         threadTs: message.id,
         sourceMessageTs: message.id,
         sniperId,
-        snipedIds,
+        snipedIds: humanSniped,
         reactSource: true,
         sourceMessage: message,
         replyFn: (content) => message.reply({ content }),

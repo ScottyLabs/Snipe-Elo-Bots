@@ -12,7 +12,10 @@ export function serverNotConfigured(): string {
 }
 
 export function removesnipeNeedSlackThread(): string {
-  return `Kindly open the snipe thread, then use the command *from inside it*. I need to know which conversation we're revising.`;
+  return (
+    `I need the snipe *thread* for this undo. Slack does not run custom slash commands from thread composers—` +
+    `open that thread and send a plain message: \`removesnipe\` (no leading slash). That's the reliable path.`
+  );
 }
 
 export function removesnipeNothingInThread(): string {
@@ -106,6 +109,22 @@ export function implicitSnipeOnlySelfDiscord(): string {
 
 export function implicitSnipeProcessFailed(error: string): string {
   return `Something fouled the shot: ${error}`;
+}
+
+export function snipeImplicitBotsOnlySlack(): string {
+  return `Automata don't sit on the board—I've no quarry there. Mention the people you're sniping, not bots (me included).`;
+}
+
+export function snipeImplicitBotsOnlyDiscord(): string {
+  return `Bots aren't marks—no ELO for automatons, this one included. Tag the people you sniped.`;
+}
+
+export function snipeMakeupIncludesBot(): string {
+  return `That paperwork lists a bot in the line-up somewhere. The ledger is for operators with a pulse—humans only, if you'd be so kind.`;
+}
+
+export function adjustTargetIsBot(): string {
+  return `That one's a bot—no rating row for automatons. Pick an operator with a pulse.`;
 }
 
 /** Discord slash command descriptions (short, her register). */

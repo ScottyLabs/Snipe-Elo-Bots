@@ -1,10 +1,70 @@
 /** Resolve Slack user display names without @mentions (no pings). Cached to limit users.info traffic. */
 
+import type { PlayerRating } from "./db";
 import { parseUserToken } from "./parse";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
-const cache = new Map<string, { displayName: string; expiresAt: number }>();
+const profileCache = new Map<string, { snap: SlackUserProfileSnap; expiresAt: number }>();
 const usernameToIdCache = new Map<string, { userId: string; expiresAt: number }>();
+
+export type SlackUserProfileSnap = {
+  displayName: string;
+  isBot: boolean;
+  deleted: boolean;
+};
+
+type SlackInfoClient = { users: { info: (a: { user: string }) => Promise<unknown> } };
+
+function slackDisplayNameFromUser(
+  u: {
+    name?: string;
+    real_name?: string;
+    profile?: { display_name?: string; real_name?: string };
+  },
+  fallbackId: string
+): string {
+  return (
+    (u.profile?.display_name && String(u.profile.display_name).trim()) ||
+    (u.profile?.real_name && String(u.profile.real_name).trim()) ||
+    (u.real_name && String(u.real_name).trim()) ||
+    (u.name && String(u.name).trim()) ||
+    fallbackId
+  );
+}
+
+/**
+ * Cached users.info: display label, bot flag, deleted. Used for leaderboards (humans only) and snipe guards.
+ */
+export async function getSlackUserProfileCached(client: SlackInfoClient, userId: string): Promise<SlackUserProfileSnap | null> {
+  const now = Date.now();
+  const hit = profileCache.get(userId);
+  if (hit && hit.expiresAt > now) return hit.snap;
+
+  try {
+    const res = (await client.users.info({ user: userId })) as {
+      user?: {
+        is_bot?: boolean;
+        deleted?: boolean;
+        name?: string;
+        real_name?: string;
+        profile?: { display_name?: string; real_name?: string };
+      };
+    };
+    const u = res.user;
+    if (!u) return null;
+    const snap: SlackUserProfileSnap = {
+      displayName: slackDisplayNameFromUser(u, userId),
+      isBot: Boolean(u.is_bot),
+      deleted: Boolean(u.deleted),
+    };
+    profileCache.set(userId, { snap, expiresAt: now + CACHE_TTL_MS });
+    return snap;
+  } catch {
+    const snap: SlackUserProfileSnap = { displayName: userId, isBot: false, deleted: false };
+    profileCache.set(userId, { snap, expiresAt: now + 60_000 });
+    return snap;
+  }
+}
 
 export function escapeSlackTableCell(s: string): string {
   return s.replace(/\|/g, "·").replace(/\n/g, " ").trim() || "—";
@@ -20,49 +80,32 @@ export function escapeSlackLeaderboardName(s: string): string {
     .trim() || "—";
 }
 
-export async function resolveSlackDisplayNames(
-  client: { users: { info: (a: { user: string }) => Promise<unknown> } },
-  userIds: string[]
-): Promise<Map<string, string>> {
+export async function resolveSlackDisplayNames(client: SlackInfoClient, userIds: string[]): Promise<Map<string, string>> {
   const unique = [...new Set(userIds)].filter(Boolean);
   const out = new Map<string, string>();
-  const now = Date.now();
-  const toFetch: string[] = [];
-
   for (const id of unique) {
-    const hit = cache.get(id);
-    if (hit && hit.expiresAt > now) {
-      out.set(id, hit.displayName);
-    } else {
-      toFetch.push(id);
-    }
+    const snap = await getSlackUserProfileCached(client, id);
+    out.set(id, snap?.displayName ?? id);
   }
-
-  for (const id of toFetch) {
-    try {
-      const res = (await client.users.info({ user: id })) as {
-        user?: {
-          name?: string;
-          real_name?: string;
-          profile?: { display_name?: string; real_name?: string };
-        };
-      };
-      const u = res.user;
-      const dn =
-        (u?.profile?.display_name && String(u.profile.display_name).trim()) ||
-        (u?.profile?.real_name && String(u.profile.real_name).trim()) ||
-        (u?.real_name && String(u.real_name).trim()) ||
-        (u?.name && String(u.name).trim()) ||
-        id;
-      cache.set(id, { displayName: dn, expiresAt: now + CACHE_TTL_MS });
-      out.set(id, dn);
-    } catch {
-      out.set(id, id);
-      cache.set(id, { displayName: id, expiresAt: now + 60_000 });
-    }
-  }
-
   return out;
+}
+
+/** Walk rating-sorted players; skip bots and deleted accounts until `topN` humans (for canvas / text leaderboard). */
+export async function takeTopSlackHumanLeaderboard(
+  client: SlackInfoClient,
+  sortedPlayers: PlayerRating[],
+  topN: number
+): Promise<{ players: PlayerRating[]; displayNames: Map<string, string> }> {
+  const players: PlayerRating[] = [];
+  const displayNames = new Map<string, string>();
+  for (const p of sortedPlayers) {
+    if (players.length >= topN) break;
+    const snap = await getSlackUserProfileCached(client, p.playerId);
+    if (!snap || snap.isBot || snap.deleted) continue;
+    players.push(p);
+    displayNames.set(p.playerId, snap.displayName);
+  }
+  return { players, displayNames };
 }
 
 type UsersListClient = {
@@ -101,10 +144,7 @@ export async function resolveSlackUsernameToUserId(client: UsersListClient, hand
 /**
  * Resolves `<@U…>`, raw `U…`, or legacy @username / bare handle from slash-command text (no ping).
  */
-export async function resolveSlackUserTokenToUserId(
-  client: UsersListClient,
-  raw: string
-): Promise<string | null> {
+export async function resolveSlackUserTokenToUserId(client: UsersListClient, raw: string): Promise<string | null> {
   const t = raw.trim();
   if (!t) return null;
   const parsed = parseUserToken(t);

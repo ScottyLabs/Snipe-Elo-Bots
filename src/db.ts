@@ -260,6 +260,21 @@ export class EloDb {
     return rows.map((r) => ({ playerId: r.player_id, rating: r.rating }));
   }
 
+  listGuildIdsWithPlayerRows(): string[] {
+    const rows = this.db.prepare(`SELECT DISTINCT guild_id FROM players`).all() as { guild_id: string }[];
+    return rows.map((r) => r.guild_id);
+  }
+
+  /** Removes rating rows (e.g. bots). Does not delete snipe history. */
+  deletePlayersForGuild(guildId: string, playerIds: string[]): number {
+    if (playerIds.length === 0) return 0;
+    const placeholders = playerIds.map(() => "?").join(",");
+    const r = this.db
+      .prepare(`DELETE FROM players WHERE guild_id = ? AND player_id IN (${placeholders})`)
+      .run(guildId, ...playerIds);
+    return Number(r.changes);
+  }
+
   setConfirmationMessageTs(guildId: string, snipeId: string, confirmationMessageTs: string) {
     this.db
       .prepare(`UPDATE snipe_events SET confirmation_message_ts = ? WHERE snipe_id = ? AND guild_id = ?`)
