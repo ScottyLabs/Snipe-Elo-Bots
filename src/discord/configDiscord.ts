@@ -28,11 +28,7 @@ function parseGuildSnipeChannels(): Map<string, string> {
     const c = process.env.DISCORD_SNIPE_CHANNEL_ID?.trim();
     if (g && c) m.set(g, c);
   }
-  if (m.size === 0) {
-    throw new Error(
-      "Set DISCORD_GUILD_SNIPE_CHANNELS as guildId:channelId,guildId2:channelId2 or DISCORD_GUILD_ID + DISCORD_SNIPE_CHANNEL_ID for one server."
-    );
-  }
+  // Empty is allowed: moderators can set per-guild channel later with /setsnipechannel.
   return m;
 }
 
@@ -44,7 +40,8 @@ function tenantIdForLegacyMigration(map: Map<string, string>): string {
   if (fromEnv) return fromEnv;
   const first = map.keys().next().value;
   if (first) return first;
-  throw new Error("Could not determine legacy tenant id for Discord DB migration.");
+  // No configured guild yet; use a stable placeholder tenant for legacy rows.
+  return "__discord__";
 }
 
 export const discordConfig = {

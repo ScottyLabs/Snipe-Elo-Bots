@@ -227,13 +227,17 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     ].map((cmd) => cmd.toJSON());
 
     try {
-      for (const gid of discordConfig.guildSnipeChannels.keys()) {
+      const registerGuildIds = new Set<string>([
+        ...discordConfig.guildSnipeChannels.keys(),
+        ...c.guilds.cache.keys(),
+      ]);
+      for (const gid of registerGuildIds) {
         await rest.put(Routes.applicationGuildCommands(discordConfig.applicationId, gid), {
           body: commands,
         });
       }
       console.log(
-        `[snipe-elo-discord] Slash commands registered for ${discordConfig.guildSnipeChannels.size} guild(s)`
+        `[snipe-elo-discord] Slash commands registered for ${registerGuildIds.size} guild(s)`
       );
     } catch (e) {
       console.error("[snipe-elo-discord] Failed to register slash commands:", e);
