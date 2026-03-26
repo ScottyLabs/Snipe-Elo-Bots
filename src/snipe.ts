@@ -20,8 +20,8 @@ export function formatSnipeConfirmation(params: {
   const { sniperId, pairMatches, playerChanges, kind } = params;
   const header =
     kind === "makeup"
-      ? `Snipe recorded (makeup) by <@${sniperId}>`
-      : `Snipe recorded by <@${sniperId}>`;
+      ? `BAM! Snipe recorded (makeup) by <@${sniperId}>`
+      : `BAM! Snipe recorded by <@${sniperId}>`;
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;

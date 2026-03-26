@@ -1,6 +1,4 @@
 import dotenv from "dotenv";
-import { normalizeSlashCommand } from "../slashCommands";
-
 dotenv.config({ quiet: true });
 
 function requireEnv(name: string): string {
@@ -58,7 +56,6 @@ export const discordConfig = {
   snipeRequireImage: !["0", "false", "no", "off"].includes(
     (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()
   ),
-  undoCommand: normalizeSlashCommand(process.env.DISCORD_UNDO_COMMAND, "removesnipe"),
   leaderboardTopN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
   leaderboardTitle: process.env.LEADERBOARD_TITLE ?? "ELO Leaderboard",
 };

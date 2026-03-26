@@ -9,7 +9,6 @@ import {
 } from "discord.js";
 import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
-import { isSlashCommandBody } from "../slashCommands";
 import { discordConfig } from "./configDiscord";
 import {
   formatAdjustEloConfirmation,
@@ -117,6 +116,15 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     const commands = [
       new SlashCommandBuilder().setName("leaderboard").setDescription("Show the ELO leaderboard"),
       new SlashCommandBuilder()
+        .setName("removesnipe")
+        .setDescription("Undo the snipe tied to a bot confirmation message")
+        .addStringOption((o) =>
+          o
+            .setName("confirmation_id")
+            .setDescription("Message ID of the bot confirmation (Developer Mode: Copy ID)")
+            .setRequired(true)
+        ),
+      new SlashCommandBuilder()
         .setName("makeupsnipe")
         .setDescription("Record a makeup snipe (sniper vs mentioned sniped players)")
         .addUserOption((o) => o.setName("sniper").setDescription("Who sniped").setRequired(true))
@@ -162,6 +170,54 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await interaction.reply({ content: `Failed: ${msg}`, ephemeral: true });
+      }
+      return;
+    }
+
+    if (interaction.commandName === "removesnipe") {
+      const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
+      if (!expectedCh || interaction.channelId !== expectedCh) {
+        await interaction.reply({
+          content: expectedCh
+            ? `Use this command in <#${expectedCh}>.`
+            : "This server is not configured for snipe ELO (missing guild→channel mapping).",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const rawId = interaction.options.getString("confirmation_id", true).trim();
+      const confirmationId = rawId.replace(/[^\d]/g, "");
+      if (!/^\d{17,20}$/.test(confirmationId)) {
+        await interaction.reply({
+          content:
+            "Invalid message ID. Enable Developer Mode, right-click the bot confirmation message, Copy ID, and paste that number.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.deferReply();
+
+      try {
+        const snipe = db.getUndoableSnipeByConfirmationMessageId(interaction.guild.id, confirmationId);
+        if (!snipe) {
+          await interaction.editReply({
+            content: "Nothing to undo for that message (wrong ID, already undone, or not a snipe confirmation).",
+          });
+          return;
+        }
+        const undoResult = db.undoSnipeEvent({
+          guildId: interaction.guild.id,
+          channelId: interaction.channelId,
+          threadTs: snipe.threadTs,
+          snipeIdToUndo: snipe.snipeId,
+        });
+        await interaction.editReply({ content: formatUndoConfirmation(undoResult.playerChanges) });
+        opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: `Undo failed: ${msg}` });
       }
       return;
     }
@@ -255,32 +311,6 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       if (!message.guild || message.author.bot) return;
       const snipeChannelId = discordConfig.guildSnipeChannels.get(message.guild.id);
       if (!snipeChannelId || message.channelId !== snipeChannelId) return;
-
-      const lower = message.content.trim().toLowerCase();
-      const refId = message.reference?.messageId;
-
-      const isUndo = refId && isSlashCommandBody(lower, discordConfig.undoCommand);
-      if (isUndo) {
-        const snipe = db.getUndoableSnipeByConfirmationMessageId(message.guild.id, refId);
-        if (!snipe) {
-          await message.reply({ content: "Nothing to undo for that message." }).catch(() => {});
-          return;
-        }
-        try {
-          const undoResult = db.undoSnipeEvent({
-            guildId: message.guild.id,
-            channelId: message.channelId,
-            threadTs: snipe.threadTs,
-            snipeIdToUndo: snipe.snipeId,
-          });
-          await message.reply({ content: formatUndoConfirmation(undoResult.playerChanges) });
-          opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          await message.reply({ content: `Undo failed: ${msg}` });
-        }
-        return;
-      }
 
       const mentioned = collectMentionedUserIds(message);
       if (mentioned.length === 0) return;

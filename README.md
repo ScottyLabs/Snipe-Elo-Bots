@@ -13,6 +13,24 @@ Optional:
 
 - `SLACK_APP_TOKEN` (Socket Mode). If set, the bot will run in Socket Mode.
 
+## Slack slash commands
+
+Slack only treats user-facing “commands” as **slash commands** registered on your app (plain messages starting with `/` are handled by Slack’s own UI, not as normal channel text).
+
+In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create commands whose names match your env (defaults):
+
+| Command | Hint text (example) |
+|--------|----------------------|
+| `/leaderboard` | Show ELO leaderboard in channel |
+| `/removesnipe` | Undo last snipe in this thread |
+| `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
+| `/adjustelo` | Args: `<user> <delta>` (integer) |
+
+- **Request URL** (HTTP mode): same base as Events API, usually `https://<host>/slack/events` for Bolt.
+- **Socket Mode**: commands are still delivered over the socket; you must still create each slash command in the app so Slack shows them in the composer.
+
+Override names with `SLACK_LEADERBOARD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
+
 ## Slack permissions (scopes)
 At minimum, your Slack app needs scopes to:
 
@@ -45,19 +63,15 @@ When detected, the bot will:
 
 ## Undo
 
-To undo a snipe, reply in the thread to the bot’s confirmation message with:
-
-- `/removesnipe` (leading slash required; override with `UNDO_COMMAND`)
-
-The bot will revert the affected ELOs (with a safety check that the ratings haven’t changed since that snipe), post an undo confirmation in the thread, and update the leaderboard canvas.
+Run **`/removesnipe`** from **inside the snipe thread** (open the thread under the bot confirmation, then invoke the slash command there). The bot posts the undo result in the thread and refreshes the canvas.
 
 ## Make up a snipe
 
-Use:
+Use **`/makeupsnipe`** with arguments: `<sniper> <sniped1> <sniped2> …` as Slack mentions (`<@U12345>`). The bot posts a short parent message in the channel and records the makeup in that message’s thread.
 
-- `/makeupsnipe <sniper> <sniped1> <sniped2> ...` (leading slash required; override with `MAKEUP_COMMAND`)
+## Manual ELO adjust
 
-`<sniper>` / `<sniped*>` should be Slack mentions like `<@U12345>`.
+Use **`/adjustelo`** with `<user mention> <integer delta>` (e.g. `<@U123> 50` or `<@U123> -25`).
 
 ## Run
 
@@ -72,4 +86,3 @@ If you want a production build:
 npm run build
 npm start
 ```
-

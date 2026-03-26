@@ -28,11 +28,16 @@ export const config = {
     /** If set, use this canvas instead of creating a new one (Slack SDK has no canvases.list). */
     canvasIdOverride: process.env.LEADERBOARD_CANVAS_ID?.trim() || null,
   },
+  /**
+   * Slash command paths for Bolt `app.command(...)`. Register matching Slash Commands in the Slack app.
+   * Env may be `removesnipe` or `/removesnipe`.
+   */
   slackOps: {
     implicitSnipeEmoji: "dart",
-    undoCommand: normalizeSlashCommand(process.env.UNDO_COMMAND, "removesnipe"),
-    makeupCommand: normalizeSlashCommand(process.env.MAKEUP_COMMAND, "makeupsnipe"),
-    adjustEloCommand: normalizeSlashCommand(process.env.ADJUSTELO_COMMAND, "adjustelo"),
+    slashUndo: normalizeSlashCommand(process.env.UNDO_COMMAND, "removesnipe"),
+    slashMakeup: normalizeSlashCommand(process.env.MAKEUP_COMMAND, "makeupsnipe"),
+    slashAdjustElo: normalizeSlashCommand(process.env.ADJUSTELO_COMMAND, "adjustelo"),
+    slashLeaderboard: normalizeSlashCommand(process.env.SLACK_LEADERBOARD_COMMAND, "leaderboard"),
     /** If false, mentioning others counts as a snipe without an image (easier testing / alternate rules). */
     snipeRequireImage: !["0", "false", "no", "off"].includes(
       (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()

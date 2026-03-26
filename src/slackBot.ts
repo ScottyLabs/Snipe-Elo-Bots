@@ -6,13 +6,41 @@ import { formatAdjustEloConfirmation, formatSnipeConfirmation, formatUndoConfirm
 import {
   isLikelyImageMessage,
   isProcessableUserMessageEvent,
-  normalizeCommandText,
   parseMentionedUserIdsFromMessageEvent,
   parseUserToken,
 } from "./parse";
 import { opsLog } from "./opsLog";
-import { isSlashCommandBody } from "./slashCommands";
 import { SLACK_GUILD_ID } from "./tenants";
+
+function chunkSlackText(text: string, maxLen = 3500): string[] {
+  const lines = text.split("\n");
+  const chunks: string[] = [];
+  let cur = "";
+  for (const line of lines) {
+    const next = cur ? `${cur}\n${line}` : line;
+    if (next.length > maxLen) {
+      if (cur) chunks.push(cur);
+      cur = line.length > maxLen ? line.slice(0, maxLen) : line;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+function formatSlackLeaderboardText(db: EloDb): string {
+  const players = db.getAllPlayersSorted(SLACK_GUILD_ID).slice(0, config.leaderboard.topN);
+  const title = config.leaderboard.title;
+  if (players.length === 0) return `*${title}*\n_No ratings yet._`;
+  const lines: string[] = [`*${title}*`, ""];
+  let rank = 1;
+  for (const p of players) {
+    lines.push(`${rank}. <@${p.playerId}> — *${p.rating}*`);
+    rank++;
+  }
+  return lines.join("\n");
+}
 
 function uniquePreserveOrder<T>(arr: T[]): T[] {
   const seen = new Set<T>();
@@ -162,6 +190,213 @@ export async function startSlackBot(params: {
     });
   };
 
+  const wrongChannelEphemeral = async (respond: (args: any) => Promise<void>) => {
+    await respond({
+      response_type: "ephemeral",
+      text: `Use Snipe ELO slash commands only in <#${config.slack.channelId}>.`,
+    });
+  };
+
+  app.command(config.slackOps.slashLeaderboard, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    try {
+      const body = formatSlackLeaderboardText(params.db);
+      const parts = chunkSlackText(body);
+      await respond({ response_type: "in_channel", text: parts[0] ?? "_Empty._" });
+      for (let i = 1; i < parts.length; i++) {
+        await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
+      }
+      opsLog("command.slash.leaderboard", { userId: command.user_id, channelId: command.channel_id });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await respond({ response_type: "ephemeral", text: `Failed: ${msg}` });
+    }
+  });
+
+  app.command(config.slackOps.slashUndo, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const threadTs = command.thread_ts;
+    if (!threadTs) {
+      await respond({
+        response_type: "ephemeral",
+        text:
+          "Run this command *from inside the snipe thread* (open the thread under the bot confirmation, then use the slash command there).",
+      });
+      return;
+    }
+    opsLog("command.slash.removesnipe", { userId: command.user_id, channelId: command.channel_id, threadTs });
+    try {
+      const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);
+      if (!snipe) {
+        opsLog("command.slash.removesnipe.result", { result: "nothing_to_undo", threadTs });
+        await respond({
+          response_type: "ephemeral",
+          text: "Nothing to undo in this thread.",
+        });
+        return;
+      }
+      const undoResult = params.db.undoSnipeEvent({
+        guildId: SLACK_GUILD_ID,
+        channelId: command.channel_id,
+        threadTs,
+        snipeIdToUndo: snipe.snipeId,
+      });
+      const canvasId = await ensureCanvasOnce();
+      await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+      const undoText = formatUndoConfirmation({
+        kind: "undo",
+        undoingSnipeId: snipe.snipeId,
+        playerChanges: undoResult.playerChanges,
+      });
+      await client.chat.postMessage({
+        channel: command.channel_id,
+        thread_ts: threadTs,
+        text: undoText,
+      });
+      await respond({
+        response_type: "ephemeral",
+        text: "Undo applied. Details posted in the thread.",
+      });
+      opsLog("command.slash.removesnipe.result", {
+        result: "ok",
+        undoesSnipeId: snipe.snipeId,
+        undoSnipeId: undoResult.undoSnipeId,
+        threadTs,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      opsLog("command.slash.removesnipe.result", { result: "error", error: msg, threadTs });
+      await respond({ response_type: "ephemeral", text: `Undo failed: ${msg}` });
+    }
+  });
+
+  app.command(config.slackOps.slashMakeup, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const parts = command.text.trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) {
+      await respond({
+        response_type: "ephemeral",
+        text: `Usage: ${config.slackOps.slashMakeup} <sniper> <sniped1> <sniped2> ... (Slack mentions like <@U123>)`,
+      });
+      return;
+    }
+    const sniperToken = parts[0];
+    const snipedTokens = parts.slice(1);
+    opsLog("command.slash.makeupsnipe", {
+      userId: command.user_id,
+      channelId: command.channel_id,
+      textPreview: command.text.slice(0, 200),
+    });
+    try {
+      const sniperResolve = parseUserToken(sniperToken);
+      if (!sniperResolve.ok) {
+        await respond({
+          response_type: "ephemeral",
+          text: "Could not parse sniper. Use a Slack mention like <@U123>.",
+        });
+        return;
+      }
+      const snipedIds = await resolveUserTokensToIds({ client, tokens: snipedTokens });
+      const root = await client.chat.postMessage({
+        channel: command.channel_id,
+        text: `<@${command.user_id}> ran \`${config.slackOps.slashMakeup}\`.`,
+      });
+      const rootTs = root.ts as string;
+      await handleApplySnipe({
+        type: "makeup",
+        channelId: command.channel_id,
+        threadTs: rootTs,
+        sourceMessageTs: rootTs,
+        sniperId: sniperResolve.userId,
+        snipedIds,
+        reactSource: false,
+      });
+      await respond({ response_type: "ephemeral", text: "Makeup snipe recorded. See the thread on the new channel message." });
+      opsLog("command.slash.makeupsnipe.result", { result: "ok", sniperId: sniperResolve.userId, snipedIds });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      opsLog("command.slash.makeupsnipe.result", { result: "error", error: msg });
+      await respond({ response_type: "ephemeral", text: `${config.slackOps.slashMakeup} failed: ${msg}` });
+    }
+  });
+
+  app.command(config.slackOps.slashAdjustElo, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const tokens = command.text.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) {
+      await respond({
+        response_type: "ephemeral",
+        text: `Usage: ${config.slackOps.slashAdjustElo} <user> <delta> — delta is a whole number (e.g. 50 or -25).`,
+      });
+      return;
+    }
+    const delta = Number(tokens[tokens.length - 1]);
+    const userTok = parseUserToken(tokens.slice(0, -1).join(" "));
+    opsLog("command.slash.adjustelo", {
+      userId: command.user_id,
+      channelId: command.channel_id,
+      textPreview: command.text.slice(0, 200),
+    });
+    try {
+      if (!userTok.ok) {
+        await respond({
+          response_type: "ephemeral",
+          text: "Could not parse user. Use a Slack mention like <@U123>.",
+        });
+        return;
+      }
+      if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+        await respond({
+          response_type: "ephemeral",
+          text: `Delta must be a whole number (got: ${tokens[tokens.length - 1]}).`,
+        });
+        return;
+      }
+      const change = params.db.adjustPlayerRating({
+        guildId: SLACK_GUILD_ID,
+        playerId: userTok.userId,
+        delta,
+      });
+      const canvasId = await ensureCanvasOnce();
+      await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+      await client.chat.postMessage({
+        channel: command.channel_id,
+        text: formatAdjustEloConfirmation({
+          playerId: change.playerId,
+          beforeRating: change.beforeRating,
+          afterRating: change.afterRating,
+          delta: change.delta,
+        }),
+      });
+      await respond({ response_type: "ephemeral", text: "ELO updated. Canvas leaderboard refreshed." });
+      opsLog("command.slash.adjustelo.result", { result: "ok", targetUserId: userTok.userId, delta });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      opsLog("command.slash.adjustelo.result", { result: "error", error: msg });
+      await respond({ response_type: "ephemeral", text: `${config.slackOps.slashAdjustElo} failed: ${msg}` });
+    }
+  });
+
+  console.log(
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+  );
+
   // Main event router.
   app.event("message", async ({ event, client, logger: boltLogger }) => {
     try {
@@ -174,206 +409,7 @@ export async function startSlackBot(params: {
         (event as any).file?.user ??
         (event as any).upload?.user) as string | undefined;
       const ts = (event as any).ts as string | undefined;
-      const threadTs = (event as any).thread_ts as string | undefined;
       if (!userId || !ts) return;
-
-      const text = normalizeCommandText((event as any).text);
-      const lower = text.toLowerCase();
-
-      // Undo command in thread.
-      if (text && threadTs && isSlashCommandBody(lower, config.slackOps.undoCommand)) {
-        opsLog("command.removesnipe", {
-          userId,
-          channelId,
-          threadTs,
-          messageTs: ts,
-          textPreview: text.slice(0, 120),
-        });
-        try {
-          const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);
-          if (!snipe) {
-            opsLog("command.removesnipe.result", { result: "nothing_to_undo", threadTs });
-            await client.chat.postMessage({
-              channel: channelId,
-              thread_ts: threadTs,
-              text: "Nothing to undo in this thread.",
-            });
-            return;
-          }
-
-          // Undo.
-          opsLog("command.removesnipe.undoing", { snipeId: snipe.snipeId, threadTs });
-          const undoResult = params.db.undoSnipeEvent({
-            guildId: SLACK_GUILD_ID,
-            channelId,
-            threadTs,
-            snipeIdToUndo: snipe.snipeId,
-          });
-          const canvasId = await ensureCanvasOnce();
-          await updateLeaderboardCanvas({ client, db: params.db, canvasId });
-
-          const undoText = formatUndoConfirmation({
-            kind: "undo",
-            undoingSnipeId: snipe.snipeId,
-            playerChanges: undoResult.playerChanges,
-          });
-          await client.chat.postMessage({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: undoText,
-          });
-          opsLog("command.removesnipe.result", {
-            result: "ok",
-            undoesSnipeId: snipe.snipeId,
-            undoSnipeId: undoResult.undoSnipeId,
-            threadTs,
-          });
-          return;
-        } catch (e: any) {
-          opsLog("command.removesnipe.result", {
-            result: "error",
-            error: e?.message ?? String(e),
-            threadTs,
-          });
-          await client.chat.postMessage({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: `Undo failed: ${e?.message ?? String(e)}`,
-          });
-          return;
-        }
-      }
-
-      // Makeupsnipe command.
-      if (text && isSlashCommandBody(lower, config.slackOps.makeupCommand)) {
-        opsLog("command.makeupsnipe", {
-          userId,
-          channelId,
-          messageTs: ts,
-          textPreview: text.slice(0, 200),
-        });
-        try {
-          const parts = text.split(/\s+/).filter(Boolean);
-          if (parts.length < 3) {
-            opsLog("command.makeupsnipe.result", { result: "usage_error", argCount: parts.length });
-            await client.chat.postMessage({
-              channel: channelId,
-              text: `Usage: ${config.slackOps.makeupCommand} <sniper> <sniped1> <sniped2> ...`,
-            });
-            return;
-          }
-
-          const sniperToken = parts[1];
-          const snipedTokens = parts.slice(2);
-
-          const sniperResolve = parseUserToken(sniperToken);
-          if (!sniperResolve.ok) {
-            opsLog("command.makeupsnipe.result", { result: "parse_sniper_failed" });
-            await client.chat.postMessage({
-              channel: channelId,
-              text: `Could not parse sniper token. Use a Slack mention like <@U123>.`,
-            });
-            return;
-          }
-
-          const snipedIds = await resolveUserTokensToIds({ client, tokens: snipedTokens });
-          opsLog("command.makeupsnipe.parsed", {
-            sniperId: sniperResolve.userId,
-            snipedIds,
-          });
-          await handleApplySnipe({
-            type: "makeup",
-            channelId,
-            threadTs: ts,
-            sourceMessageTs: ts,
-            sniperId: sniperResolve.userId,
-            snipedIds,
-            reactSource: false,
-          });
-
-          opsLog("command.makeupsnipe.result", { result: "ok", sniperId: sniperResolve.userId, snipedIds });
-          return;
-        } catch (e: any) {
-          opsLog("command.makeupsnipe.result", { result: "error", error: e?.message ?? String(e) });
-          await client.chat.postMessage({
-            channel: channelId,
-            text: `${config.slackOps.makeupCommand} failed: ${e?.message ?? String(e)}`,
-          });
-          return;
-        }
-      }
-
-      // Manual ELO adjustment: /adjustelo @user <integer delta>
-      if (text && isSlashCommandBody(lower, config.slackOps.adjustEloCommand)) {
-        opsLog("command.adjustelo", {
-          userId,
-          channelId,
-          messageTs: ts,
-          textPreview: text.slice(0, 200),
-        });
-        try {
-          const parts = text.split(/\s+/).filter(Boolean);
-          if (parts.length < 3) {
-            opsLog("command.adjustelo.result", { result: "usage_error", argCount: parts.length });
-            await client.chat.postMessage({
-              channel: channelId,
-              text: `Usage: ${config.slackOps.adjustEloCommand} <user> <delta> — delta is a whole number (e.g. +50 or -25).`,
-            });
-            return;
-          }
-
-          const userTok = parseUserToken(parts[1]);
-          if (!userTok.ok) {
-            opsLog("command.adjustelo.result", { result: "parse_user_failed" });
-            await client.chat.postMessage({
-              channel: channelId,
-              text: `Could not parse user. Use a Slack mention like <@U123>.`,
-            });
-            return;
-          }
-
-          const delta = Number(parts[2]);
-          if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
-            opsLog("command.adjustelo.result", { result: "parse_delta_failed" });
-            await client.chat.postMessage({
-              channel: channelId,
-              text: `Delta must be a whole number (got: ${parts[2]}).`,
-            });
-            return;
-          }
-
-          const change = params.db.adjustPlayerRating({
-            guildId: SLACK_GUILD_ID,
-            playerId: userTok.userId,
-            delta,
-          });
-          const canvasId = await ensureCanvasOnce();
-          await updateLeaderboardCanvas({ client, db: params.db, canvasId });
-
-          await client.chat.postMessage({
-            channel: channelId,
-            text: formatAdjustEloConfirmation({
-              playerId: change.playerId,
-              beforeRating: change.beforeRating,
-              afterRating: change.afterRating,
-              delta: change.delta,
-            }),
-          });
-          opsLog("command.adjustelo.result", {
-            result: "ok",
-            targetUserId: userTok.userId,
-            delta,
-          });
-          return;
-        } catch (e: any) {
-          opsLog("command.adjustelo.result", { result: "error", error: e?.message ?? String(e) });
-          await client.chat.postMessage({
-            channel: channelId,
-            text: `${config.slackOps.adjustEloCommand} failed: ${e?.message ?? String(e)}`,
-          });
-          return;
-        }
-      }
 
       // Implicit snipe: mentions (in text and/or blocks) + optional image (see SNIPE_REQUIRE_IMAGE).
       const hasImage = isLikelyImageMessage(event);
