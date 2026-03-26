@@ -98,14 +98,19 @@ async function renderLeaderboardText(db: EloDb, guild: Guild): Promise<string[]>
 
 async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction, db: EloDb) {
   try {
+    await interaction.deferReply();
     const parts = await renderLeaderboardText(db, interaction.guild!);
-    await interaction.reply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
+    await interaction.editReply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
     for (let i = 1; i < parts.length; i++) {
       await interaction.followUp({ content: parts[i] });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true });
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: L.leaderboardFailed(msg) }).catch(() => {});
+    } else {
+      await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
+    }
   }
 }
 
@@ -464,6 +469,11 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     } catch (e) {
       console.error("[snipe-elo-discord] messageCreate error:", e);
     }
+  });
+
+  // Keep the process alive on Discord client errors; log and continue.
+  client.on(Events.Error, (err) => {
+    console.error("[snipe-elo-discord] client error:", err);
   });
 
   await client.login(discordConfig.token);
