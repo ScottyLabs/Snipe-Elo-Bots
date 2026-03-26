@@ -127,6 +127,14 @@ export function adjustTargetIsBot(): string {
   return `That one's a bot—no rating row for automatons. Pick an operator with a pulse.`;
 }
 
+export function discordModeratorOnlyCommand(): string {
+  return `That switch is locked to moderators. If you're holding the server keys, try again.`;
+}
+
+export function discordSnipeChannelSet(channelRef: string): string {
+  return `Understood. This server's snipe lane is now ${channelRef}. I'll keep score there.`;
+}
+
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
   leaderboard: "Survey the standings—who's sitting pretty today?",
@@ -134,4 +142,5 @@ export const discordSlashDescriptions = {
   removesnipe: "Strike a snipe from the record (bot confirmation message ID).",
   makeupsnipe: "Log a snipe that missed the camera—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",
+  setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
 } as const;

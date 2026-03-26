@@ -2,6 +2,7 @@ import {
   Client,
   Events,
   GatewayIntentBits,
+  PermissionFlagsBits,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -23,6 +24,19 @@ import { escapeDiscordMarkdownChunk, takeTopDiscordHumanLeaderboard } from "../d
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 
 const DART = "🎯";
+const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
+
+function getGuildSnipeChannelId(db: EloDb, guildId: string): string | null {
+  return db.getMeta(guildId, SNIPE_CHANNEL_META_KEY) ?? discordConfig.guildSnipeChannels.get(guildId) ?? null;
+}
+
+function setGuildSnipeChannelId(db: EloDb, guildId: string, channelId: string): void {
+  db.setMeta(guildId, SNIPE_CHANNEL_META_KEY, channelId);
+}
+
+function isDiscordModerator(interaction: ChatInputCommandInteraction): boolean {
+  return Boolean(interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild));
+}
 
 /** Non-sniper mentions that resolve to human users (fetch on cache miss). */
 async function discordHumanSnipedIds(
@@ -198,6 +212,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       new SlashCommandBuilder()
         .setName("adjustelo")
         .setDescription(L.discordSlashDescriptions.adjustelo)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addUserOption((o) => o.setName("player").setDescription("Whose line on the ledger to move").setRequired(true))
         .addIntegerOption((o) =>
           o
@@ -205,6 +220,10 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
             .setDescription("Points to add (positive) or shave off (negative)")
             .setRequired(true)
         ),
+      new SlashCommandBuilder()
+        .setName("setsnipechannel")
+        .setDescription(L.discordSlashDescriptions.setsnipechannel)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
     ].map((cmd) => cmd.toJSON());
 
     try {
@@ -230,7 +249,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     }
 
     if (interaction.commandName === "removesnipe") {
-      const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
+      const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
           content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
@@ -275,7 +294,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     }
 
     if (interaction.commandName === "makeupsnipe") {
-      const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
+      const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
           content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
@@ -328,8 +347,27 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       return;
     }
 
+    if (interaction.commandName === "setsnipechannel") {
+      if (!isDiscordModerator(interaction)) {
+        await interaction.reply({ content: L.discordModeratorOnlyCommand(), ephemeral: true });
+        return;
+      }
+      setGuildSnipeChannelId(db, interaction.guild.id, interaction.channelId);
+      await interaction.reply({ content: L.discordSnipeChannelSet(`<#${interaction.channelId}>`), ephemeral: true });
+      opsLog("discord.setsnipechannel.ok", {
+        guildId: interaction.guild.id,
+        channelId: interaction.channelId,
+        actorId: interaction.user.id,
+      });
+      return;
+    }
+
     if (interaction.commandName === "adjustelo") {
-      const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
+      if (!isDiscordModerator(interaction)) {
+        await interaction.reply({ content: L.discordModeratorOnlyCommand(), ephemeral: true });
+        return;
+      }
+      const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
           content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
@@ -372,7 +410,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
   client.on(Events.MessageCreate, async (message) => {
     try {
       if (!message.guild || message.author.bot) return;
-      const snipeChannelId = discordConfig.guildSnipeChannels.get(message.guild.id);
+      const snipeChannelId = getGuildSnipeChannelId(db, message.guild.id);
       if (!snipeChannelId || message.channelId !== snipeChannelId) return;
 
       const mentioned = collectMentionedUserIds(message);
