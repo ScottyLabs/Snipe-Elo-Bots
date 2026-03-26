@@ -38,6 +38,11 @@ export const config = {
     slashMakeup: normalizeSlashCommand(process.env.MAKEUP_COMMAND, "makeupsnipe"),
     slashAdjustElo: normalizeSlashCommand(process.env.ADJUSTELO_COMMAND, "adjustelo"),
     slashLeaderboard: normalizeSlashCommand(process.env.SLACK_LEADERBOARD_COMMAND, "leaderboard"),
+    /** Only these Slack user IDs may use `/adjustelo`. Comma-separated in `ADJUSTELO_ALLOWED_SLACK_USER_IDS`; default is a single operator. */
+    adjustEloAllowedSlackUserIds: (process.env.ADJUSTELO_ALLOWED_SLACK_USER_IDS ?? "U09E6EHA5R8")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     /** If false, mentioning others counts as a snipe without an image (easier testing / alternate rules). */
     snipeRequireImage: !["0", "false", "no", "off"].includes(
       (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()

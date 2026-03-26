@@ -15,16 +15,33 @@ Optional:
 
 ## Slack slash commands
 
+### Commands don’t show up / “nothing is generated” — is it scopes?
+
+**No.** OAuth **scopes** control what the bot token may *do* (post messages, read history, etc.). They do **not** create or list slash commands for you.
+
+Slack also **does not** read your Bolt `app.command(...)` handlers and auto-register commands. The composer only shows `/leaderboard`, `/removesnipe`, etc. after those commands exist **in the Slack app configuration**.
+
+Do one of the following:
+
+1. **Manifest (fastest):** [Create an app from a manifest](https://api.slack.com/apps?new_app=1) and paste/adapt `slack-app-manifest.example.json` (command names must match your env defaults, or edit the manifest to match `UNDO_COMMAND`, `MAKEUP_COMMAND`, etc.).
+2. **Manual:** [Your app](https://api.slack.com/apps) → **Slash Commands** → **Create New Command** for each row in the table below.
+
+**Socket Mode:** Delivery goes over the websocket; you still **must** define each slash command in the app so Slack shows it in the UI. When Slack asks for a Request URL on each command, you can use a placeholder `https://example.com/slack/events` if you rely on Socket Mode for delivery (see Slack’s current docs for your workspace).
+
+**HTTP mode:** Set every slash command’s Request URL to your Bolt receiver, usually `https://<your-host>/slack/events`.
+
+---
+
 Slack only treats user-facing “commands” as **slash commands** registered on your app (plain messages starting with `/` are handled by Slack’s own UI, not as normal channel text).
 
-In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create commands whose names match your env (defaults):
+In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create commands whose names match your env (defaults), or use the example manifest above:
 
 | Command | Hint text (example) |
 |--------|----------------------|
 | `/leaderboard` | Show ELO leaderboard in channel |
 | `/removesnipe` | Undo last snipe in this thread |
 | `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
-| `/adjustelo` | Args: `<user> <delta>` (integer) |
+| `/adjustelo` | Args: `<user> <delta>` (integer). **Slack:** only user IDs in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` (default `U09E6EHA5R8`). |
 
 - **Request URL** (HTTP mode): same base as Events API, usually `https://<host>/slack/events` for Bolt.
 - **Socket Mode**: commands are still delivered over the socket; you must still create each slash command in the app so Slack shows them in the composer.
@@ -71,7 +88,7 @@ Use **`/makeupsnipe`** with arguments: `<sniper> <sniped1> <sniped2> …` as Sla
 
 ## Manual ELO adjust
 
-Use **`/adjustelo`** with `<user mention> <integer delta>` (e.g. `<@U123> 50` or `<@U123> -25`).
+Use **`/adjustelo`** with `<user mention> <integer delta>` (e.g. `<@U123> 50` or `<@U123> -25`). On Slack, only members listed in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` may run it (comma-separated; built-in default if unset).
 
 ## Run
 

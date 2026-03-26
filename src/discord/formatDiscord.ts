@@ -22,19 +22,29 @@ export function formatSnipeConfirmation(params: {
   const { sniperId, pairMatches, playerChanges, kind } = params;
   const header =
     kind === "makeup"
-      ? `Snipe recorded (makeup) by ${mention(sniperId)}`
-      : `Snipe recorded by ${mention(sniperId)}`;
+      ? `Mission accomplished—after a fashion. A makeup snipe is filed under ${mention(sniperId)}; the records are thorough, you see.`
+      : `Target accounted for. ${mention(sniperId)} may take the credit—the rest is bookkeeping.`;
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
     return `- ${mention(m.snipedId)}: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}.`;
   });
 
-  return [header, "", "Changes:", ...matchLines, "", "Current ELOs:", formatPlayerListElo(playerChanges)].join("\n");
+  return [
+    header,
+    "",
+    "Exchange of fire:",
+    ...matchLines,
+    "",
+    "Standings—for the moment:",
+    formatPlayerListElo(playerChanges),
+  ].join("\n");
 }
 
 export function formatUndoConfirmation(playerChanges: PlayerChange[]): string {
-  return [`Snipe undone.`, "", "ELOs after undo:", formatPlayerListElo(playerChanges)].join("\n");
+  return [`Consider that last entry revised. Here's where everyone landed:`, "", formatPlayerListElo(playerChanges)].join(
+    "\n"
+  );
 }
 
 export function formatAdjustEloConfirmation(params: {
@@ -44,5 +54,5 @@ export function formatAdjustEloConfirmation(params: {
   delta: number;
 }): string {
   const { playerId, beforeRating, afterRating, delta } = params;
-  return `${mention(playerId)}: ${beforeRating} → ${afterRating} (${formatSigned(delta)})`;
+  return `${mention(playerId)}: ${beforeRating} → ${afterRating} (${formatSigned(delta)}) — the books are updated. Do try to keep things sporting~`;
 }

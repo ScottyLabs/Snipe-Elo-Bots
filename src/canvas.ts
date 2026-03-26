@@ -81,15 +81,14 @@ export async function ensureLeaderboardCanvas(params: {
   } catch (err: unknown) {
     if (slackErrorCode(err) === "not_in_channel") {
       throw new Error(
-        `Slack not_in_channel: invite the bot to the snipe channel (e.g. /invite @YourBot). ` +
-          `For public channels you can also add the bot scope channels:join so it can join automatically. ` +
-          `Channel ID: ${config.slack.channelId}`
+        `The channel won't have me—not_in_channel. Invite the bot to the snipe room (e.g. /invite @YourBot), ` +
+          `or grant channels:join for public halls. Channel: ${config.slack.channelId}`
       );
     }
     throw err;
   }
   const canvasId = created?.canvas_id ?? created?.id;
-  if (!canvasId) throw new Error("failed_to_create_canvas");
+  if (!canvasId) throw new Error("The leaderboard canvas refused to appear—check scopes and channel access.");
   db.setMeta(SLACK_GUILD_ID, "leaderboard_canvas_id", canvasId);
   opsLog("canvas.leaderboard.created", { canvasId, title });
   return canvasId;

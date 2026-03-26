@@ -11,6 +11,7 @@ import {
 } from "./parse";
 import { opsLog } from "./opsLog";
 import { SLACK_GUILD_ID } from "./tenants";
+import * as L from "./voiceLemuen";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
   const lines = text.split("\n");
@@ -32,7 +33,7 @@ function chunkSlackText(text: string, maxLen = 3500): string[] {
 function formatSlackLeaderboardText(db: EloDb): string {
   const players = db.getAllPlayersSorted(SLACK_GUILD_ID).slice(0, config.leaderboard.topN);
   const title = config.leaderboard.title;
-  if (players.length === 0) return `*${title}*\n_No ratings yet._`;
+  if (players.length === 0) return `*${title}*\n${L.leaderboardEmptyFallback()}`;
   const lines: string[] = [`*${title}*`, ""];
   let rank = 1;
   for (const p of players) {
@@ -193,7 +194,7 @@ export async function startSlackBot(params: {
   const wrongChannelEphemeral = async (respond: (args: any) => Promise<void>) => {
     await respond({
       response_type: "ephemeral",
-      text: `Use Snipe ELO slash commands only in <#${config.slack.channelId}>.`,
+      text: L.wrongSnipeChannel(`<#${config.slack.channelId}>`),
     });
   };
 
@@ -206,14 +207,14 @@ export async function startSlackBot(params: {
     try {
       const body = formatSlackLeaderboardText(params.db);
       const parts = chunkSlackText(body);
-      await respond({ response_type: "in_channel", text: parts[0] ?? "_Empty._" });
+      await respond({ response_type: "in_channel", text: parts[0] ?? L.leaderboardEmptyFallback() });
       for (let i = 1; i < parts.length; i++) {
         await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
       }
       opsLog("command.slash.leaderboard", { userId: command.user_id, channelId: command.channel_id });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      await respond({ response_type: "ephemeral", text: `Failed: ${msg}` });
+      await respond({ response_type: "ephemeral", text: L.leaderboardFailed(msg) });
     }
   });
 
@@ -227,8 +228,7 @@ export async function startSlackBot(params: {
     if (!threadTs) {
       await respond({
         response_type: "ephemeral",
-        text:
-          "Run this command *from inside the snipe thread* (open the thread under the bot confirmation, then use the slash command there).",
+        text: L.removesnipeNeedSlackThread(),
       });
       return;
     }
@@ -239,7 +239,7 @@ export async function startSlackBot(params: {
         opsLog("command.slash.removesnipe.result", { result: "nothing_to_undo", threadTs });
         await respond({
           response_type: "ephemeral",
-          text: "Nothing to undo in this thread.",
+          text: L.removesnipeNothingInThread(),
         });
         return;
       }
@@ -263,7 +263,7 @@ export async function startSlackBot(params: {
       });
       await respond({
         response_type: "ephemeral",
-        text: "Undo applied. Details posted in the thread.",
+        text: L.removesnipeUndoAckEphemeral(),
       });
       opsLog("command.slash.removesnipe.result", {
         result: "ok",
@@ -274,7 +274,7 @@ export async function startSlackBot(params: {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.removesnipe.result", { result: "error", error: msg, threadTs });
-      await respond({ response_type: "ephemeral", text: `Undo failed: ${msg}` });
+      await respond({ response_type: "ephemeral", text: L.removesnipeFailed(msg) });
     }
   });
 
@@ -288,7 +288,7 @@ export async function startSlackBot(params: {
     if (parts.length < 2) {
       await respond({
         response_type: "ephemeral",
-        text: `Usage: ${config.slackOps.slashMakeup} <sniper> <sniped1> <sniped2> ... (Slack mentions like <@U123>)`,
+        text: L.makeupUsage(config.slackOps.slashMakeup),
       });
       return;
     }
@@ -304,14 +304,14 @@ export async function startSlackBot(params: {
       if (!sniperResolve.ok) {
         await respond({
           response_type: "ephemeral",
-          text: "Could not parse sniper. Use a Slack mention like <@U123>.",
+          text: L.makeupParseSniperFail(),
         });
         return;
       }
       const snipedIds = await resolveUserTokensToIds({ client, tokens: snipedTokens });
       const root = await client.chat.postMessage({
         channel: command.channel_id,
-        text: `<@${command.user_id}> ran \`${config.slackOps.slashMakeup}\`.`,
+        text: L.makeupRootMessage(`<@${command.user_id}>`, config.slackOps.slashMakeup),
       });
       const rootTs = root.ts as string;
       await handleApplySnipe({
@@ -323,12 +323,12 @@ export async function startSlackBot(params: {
         snipedIds,
         reactSource: false,
       });
-      await respond({ response_type: "ephemeral", text: "Makeup snipe recorded. See the thread on the new channel message." });
+      await respond({ response_type: "ephemeral", text: L.makeupSuccessEphemeral() });
       opsLog("command.slash.makeupsnipe.result", { result: "ok", sniperId: sniperResolve.userId, snipedIds });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.makeupsnipe.result", { result: "error", error: msg });
-      await respond({ response_type: "ephemeral", text: `${config.slackOps.slashMakeup} failed: ${msg}` });
+      await respond({ response_type: "ephemeral", text: L.makeupCommandFailed(config.slackOps.slashMakeup, msg) });
     }
   });
 
@@ -338,11 +338,16 @@ export async function startSlackBot(params: {
       await wrongChannelEphemeral(respond);
       return;
     }
+    if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(command.user_id)) {
+      opsLog("command.slash.adjustelo.denied", { userId: command.user_id });
+      await respond({ response_type: "ephemeral", text: L.adjustEloForbidden() });
+      return;
+    }
     const tokens = command.text.trim().split(/\s+/).filter(Boolean);
     if (tokens.length < 2) {
       await respond({
         response_type: "ephemeral",
-        text: `Usage: ${config.slackOps.slashAdjustElo} <user> <delta> — delta is a whole number (e.g. 50 or -25).`,
+        text: L.adjustUsage(config.slackOps.slashAdjustElo),
       });
       return;
     }
@@ -357,14 +362,14 @@ export async function startSlackBot(params: {
       if (!userTok.ok) {
         await respond({
           response_type: "ephemeral",
-          text: "Could not parse user. Use a Slack mention like <@U123>.",
+          text: L.adjustParseUserFail(),
         });
         return;
       }
       if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
         await respond({
           response_type: "ephemeral",
-          text: `Delta must be a whole number (got: ${tokens[tokens.length - 1]}).`,
+          text: L.adjustDeltaInvalid(tokens[tokens.length - 1]),
         });
         return;
       }
@@ -384,12 +389,12 @@ export async function startSlackBot(params: {
           delta: change.delta,
         }),
       });
-      await respond({ response_type: "ephemeral", text: "ELO updated. Canvas leaderboard refreshed." });
+      await respond({ response_type: "ephemeral", text: L.adjustSuccessEphemeral() });
       opsLog("command.slash.adjustelo.result", { result: "ok", targetUserId: userTok.userId, delta });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.adjustelo.result", { result: "error", error: msg });
-      await respond({ response_type: "ephemeral", text: `${config.slackOps.slashAdjustElo} failed: ${msg}` });
+      await respond({ response_type: "ephemeral", text: L.adjustCommandFailed(config.slackOps.slashAdjustElo, msg) });
     }
   });
 
@@ -432,9 +437,7 @@ export async function startSlackBot(params: {
           await client.chat.postMessage({
             channel: channelId,
             thread_ts: ts,
-            text:
-              "I see an image and a mention, but only you were mentioned. " +
-              "Mention everyone who was *sniped* in the same message (the photographer is the sniper automatically).",
+            text: L.implicitSnipeOnlySelfSlack(),
           });
         }
         return;
@@ -465,7 +468,7 @@ export async function startSlackBot(params: {
         await client.chat.postMessage({
           channel: channelId,
           thread_ts: ts,
-          text: `Snipe processing failed: ${e?.message ?? String(e)}`,
+          text: L.implicitSnipeProcessFailed(e?.message ?? String(e)),
         });
       }
     } catch (e: any) {

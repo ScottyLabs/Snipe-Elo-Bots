@@ -9,6 +9,7 @@ import {
 } from "discord.js";
 import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
+import * as L from "../voiceLemuen";
 import { discordConfig } from "./configDiscord";
 import {
   formatAdjustEloConfirmation,
@@ -39,7 +40,7 @@ function renderLeaderboardText(db: EloDb, guildId: string, guildName: string | n
   const players = db.getAllPlayersSorted(guildId).slice(0, discordConfig.leaderboardTopN);
   const base = discordConfig.leaderboardTitle;
   const title = guildName ? `${guildName} — ${base}` : base;
-  if (players.length === 0) return [`**${title}**\n_No ratings yet._`];
+  if (players.length === 0) return [`**${title}**\n${L.leaderboardEmptyFallback()}`];
   const lines: string[] = [`**${title}**`, ""];
   let rank = 1;
   for (const p of players) {
@@ -114,32 +115,37 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     console.log(`[snipe-elo-discord] Logged in as ${c.user.tag}`);
     const rest = new REST().setToken(discordConfig.token);
     const commands = [
-      new SlashCommandBuilder().setName("leaderboard").setDescription("Show the ELO leaderboard"),
+      new SlashCommandBuilder()
+        .setName("leaderboard")
+        .setDescription(L.discordSlashDescriptions.leaderboard),
       new SlashCommandBuilder()
         .setName("removesnipe")
-        .setDescription("Undo the snipe tied to a bot confirmation message")
+        .setDescription(L.discordSlashDescriptions.removesnipe)
         .addStringOption((o) =>
           o
             .setName("confirmation_id")
-            .setDescription("Message ID of the bot confirmation (Developer Mode: Copy ID)")
+            .setDescription("ID of my confirmation message (Developer Mode: Copy ID)")
             .setRequired(true)
         ),
       new SlashCommandBuilder()
         .setName("makeupsnipe")
-        .setDescription("Record a makeup snipe (sniper vs mentioned sniped players)")
-        .addUserOption((o) => o.setName("sniper").setDescription("Who sniped").setRequired(true))
+        .setDescription(L.discordSlashDescriptions.makeupsnipe)
+        .addUserOption((o) => o.setName("sniper").setDescription("Who held the lens, so to speak").setRequired(true))
         .addStringOption((o) =>
           o
             .setName("sniped")
-            .setDescription("Who was sniped — use @mentions, e.g. @a @b")
+            .setDescription("Who was caught—@mention each, e.g. @a @b")
             .setRequired(true)
         ),
       new SlashCommandBuilder()
         .setName("adjustelo")
-        .setDescription("Manually add or subtract ELO for a player")
-        .addUserOption((o) => o.setName("player").setDescription("Whose rating to change").setRequired(true))
+        .setDescription(L.discordSlashDescriptions.adjustelo)
+        .addUserOption((o) => o.setName("player").setDescription("Whose line on the ledger to move").setRequired(true))
         .addIntegerOption((o) =>
-          o.setName("delta").setDescription("Amount to add (positive) or subtract (negative)").setRequired(true)
+          o
+            .setName("delta")
+            .setDescription("Points to add (positive) or shave off (negative)")
+            .setRequired(true)
         ),
     ].map((cmd) => cmd.toJSON());
 
@@ -163,13 +169,13 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     if (interaction.commandName === "leaderboard") {
       try {
         const parts = renderLeaderboardText(db, interaction.guild.id, interaction.guild.name);
-        await interaction.reply({ content: parts[0] ?? "Empty leaderboard." });
+        await interaction.reply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
         for (let i = 1; i < parts.length; i++) {
           await interaction.followUp({ content: parts[i] });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.reply({ content: `Failed: ${msg}`, ephemeral: true });
+        await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true });
       }
       return;
     }
@@ -178,9 +184,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
-          content: expectedCh
-            ? `Use this command in <#${expectedCh}>.`
-            : "This server is not configured for snipe ELO (missing guild→channel mapping).",
+          content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
           ephemeral: true,
         });
         return;
@@ -190,8 +194,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       const confirmationId = rawId.replace(/[^\d]/g, "");
       if (!/^\d{17,20}$/.test(confirmationId)) {
         await interaction.reply({
-          content:
-            "Invalid message ID. Enable Developer Mode, right-click the bot confirmation message, Copy ID, and paste that number.",
+          content: L.discordInvalidConfirmationId(),
           ephemeral: true,
         });
         return;
@@ -203,7 +206,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         const snipe = db.getUndoableSnipeByConfirmationMessageId(interaction.guild.id, confirmationId);
         if (!snipe) {
           await interaction.editReply({
-            content: "Nothing to undo for that message (wrong ID, already undone, or not a snipe confirmation).",
+            content: L.discordNothingToUndo(),
           });
           return;
         }
@@ -217,7 +220,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: `Undo failed: ${msg}` });
+        await interaction.editReply({ content: L.removesnipeFailed(msg) });
       }
       return;
     }
@@ -226,9 +229,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
-          content: expectedCh
-            ? `Use this command in <#${expectedCh}>.`
-            : "This server is not configured for snipe ELO (missing guild→channel mapping).",
+          content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
           ephemeral: true,
         });
         return;
@@ -240,7 +241,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
 
       if (snipedIds.length === 0) {
         await interaction.reply({
-          content: "No sniped players found. Include @mentions in the `sniped` field (e.g. `@alice @bob`).",
+          content: L.discordNoSnipedInMakeup(),
           ephemeral: true,
         });
         return;
@@ -262,7 +263,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: `makeupsnipe failed: ${msg}` });
+        await interaction.editReply({ content: L.makeupCommandFailed("/makeupsnipe", msg) });
       }
       return;
     }
@@ -271,9 +272,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
         await interaction.reply({
-          content: expectedCh
-            ? `Use this command in <#${expectedCh}>.`
-            : "This server is not configured for snipe ELO (missing guild→channel mapping).",
+          content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
           ephemeral: true,
         });
         return;
@@ -301,7 +300,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         opsLog("discord.adjustelo.ok", { guildId: interaction.guild.id, playerId: target.id, delta });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: `adjustelo failed: ${msg}` });
+        await interaction.editReply({ content: L.adjustCommandFailed("/adjustelo", msg) });
       }
     }
   });
@@ -324,8 +323,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       if (snipedIds.length === 0) {
         if (hasImage) {
           await message.reply({
-            content:
-              "I see an image but only you were mentioned. Mention everyone who was sniped in the same message.",
+            content: L.implicitSnipeOnlySelfDiscord(),
           });
         }
         return;

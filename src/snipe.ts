@@ -6,7 +6,6 @@ export function formatSigned(n: number): string {
 }
 
 export function formatPlayerListElo(playerChanges: PlayerChange[]): string {
-  // Stable order: show higher ELO first for readability.
   const byAfter = [...playerChanges].sort((a, b) => b.afterRating - a.afterRating);
   return byAfter.map((c) => `<@${c.playerId}>: ${c.afterRating}`).join("\n");
 }
@@ -20,8 +19,8 @@ export function formatSnipeConfirmation(params: {
   const { sniperId, pairMatches, playerChanges, kind } = params;
   const header =
     kind === "makeup"
-      ? `BAM! Snipe recorded (makeup) by <@${sniperId}>`
-      : `BAM! Snipe recorded by <@${sniperId}>`;
+      ? `Mission accomplished. A makeup snipe is filed under <@${sniperId}>; the records are thorough, you see.`
+      : `Target accounted for. <@${sniperId}> may take the credit—the rest is bookkeeping.`;
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
@@ -32,10 +31,10 @@ export function formatSnipeConfirmation(params: {
   return [
     header,
     "",
-    "Changes:",
+    "Exchange of fire:",
     ...matchLines,
     "",
-    "Current ELOs:",
+    "Standings—for the moment:",
     formatPlayerListElo(playerChanges),
   ].join("\n");
 }
@@ -47,9 +46,8 @@ export function formatUndoConfirmation(params: {
 }): string {
   const { playerChanges } = params;
   return [
-    `Snipe undone.`,
+    `Consider that last entry revised. Here's where everyone landed:`,
     "",
-    "ELOs after undo:",
     formatPlayerListElo(playerChanges),
   ].join("\n");
 }
@@ -61,6 +59,5 @@ export function formatAdjustEloConfirmation(params: {
   delta: number;
 }): string {
   const { playerId, beforeRating, afterRating, delta } = params;
-  return `<@${playerId}>: ${beforeRating} → ${afterRating} (${formatSigned(delta)})`;
+  return `<@${playerId}>: ${beforeRating} → ${afterRating} (${formatSigned(delta)}) — the books are updated. Do try to keep things sporting~`;
 }
-
