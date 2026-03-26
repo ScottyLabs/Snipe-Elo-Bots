@@ -18,7 +18,7 @@ import {
   formatAdjustEloConfirmation,
   formatSnipeConfirmation,
   formatUndoConfirmation,
-} from "./formatDiscord";
+} from "../snipe";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
 import { escapeDiscordMarkdownChunk, takeTopDiscordHumanLeaderboard } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
@@ -288,7 +288,13 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
           threadTs: snipe.threadTs,
           snipeIdToUndo: snipe.snipeId,
         });
-        await interaction.editReply({ content: formatUndoConfirmation(undoResult.playerChanges) });
+        await interaction.editReply({
+          content: formatUndoConfirmation({
+            kind: "undo",
+            undoingSnipeId: snipe.snipeId,
+            playerChanges: undoResult.playerChanges,
+          }),
+        });
         opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

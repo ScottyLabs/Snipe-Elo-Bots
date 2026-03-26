@@ -87,7 +87,7 @@ export function discordInvalidConfirmationId(): string {
 }
 
 export function discordNothingToUndo(): string {
-  return `Nothing to undo for that message—wrong ID, already struck from the record, or not one of mine.`;
+  return removesnipeNothingInThread();
 }
 
 export function discordNoSnipedInMakeup(): string {
@@ -102,9 +102,7 @@ export function implicitSnipeOnlySelfSlack(): string {
 }
 
 export function implicitSnipeOnlySelfDiscord(): string {
-  return (
-    `Image, mention—but only you. Tag everyone who was sniped in that same message, if you would.`
-  );
+  return implicitSnipeOnlySelfSlack();
 }
 
 export function implicitSnipeProcessFailed(error: string): string {
@@ -116,7 +114,7 @@ export function snipeImplicitBotsOnlySlack(): string {
 }
 
 export function snipeImplicitBotsOnlyDiscord(): string {
-  return `Bots aren't marks—no ELO for automatons, this one included. Tag the people you sniped.`;
+  return snipeImplicitBotsOnlySlack();
 }
 
 export function snipeMakeupIncludesBot(): string {
