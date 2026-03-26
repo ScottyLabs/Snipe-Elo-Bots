@@ -5,6 +5,8 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  type ChatInputCommandInteraction,
+  type Guild,
   type Message,
 } from "discord.js";
 import type { EloDb } from "../db";
@@ -17,6 +19,7 @@ import {
   formatUndoConfirmation,
 } from "./formatDiscord";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
+import { escapeDiscordMarkdownChunk, resolveDiscordDisplayNames } from "../discordDisplayNames";
 
 const DART = "🎯";
 
@@ -36,18 +39,37 @@ function chunkLines(lines: string[], maxLen = 1900): string[] {
   return chunks;
 }
 
-function renderLeaderboardText(db: EloDb, guildId: string, guildName: string | null): string[] {
+async function renderLeaderboardText(db: EloDb, guild: Guild): Promise<string[]> {
+  const guildId = guild.id;
   const players = db.getAllPlayersSorted(guildId).slice(0, discordConfig.leaderboardTopN);
   const base = discordConfig.leaderboardTitle;
-  const title = guildName ? `${guildName} — ${base}` : base;
+  const title = guild.name ? `${guild.name} — ${base}` : base;
   if (players.length === 0) return [`**${title}**\n${L.leaderboardEmptyFallback()}`];
+  const nameMap = await resolveDiscordDisplayNames(
+    guild,
+    players.map((p) => p.playerId)
+  );
   const lines: string[] = [`**${title}**`, ""];
   let rank = 1;
   for (const p of players) {
-    lines.push(`${rank}. <@${p.playerId}> — **${p.rating}**`);
+    const label = escapeDiscordMarkdownChunk(nameMap.get(p.playerId) ?? p.playerId);
+    lines.push(`${rank}. ${label} — **${p.rating}**`);
     rank++;
   }
   return chunkLines(lines, 1950);
+}
+
+async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction, db: EloDb) {
+  try {
+    const parts = await renderLeaderboardText(db, interaction.guild!);
+    await interaction.reply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
+    for (let i = 1; i < parts.length; i++) {
+      await interaction.followUp({ content: parts[i] });
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true });
+  }
 }
 
 export async function startDiscordBot(db: EloDb): Promise<void> {
@@ -119,6 +141,9 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         .setName("leaderboard")
         .setDescription(L.discordSlashDescriptions.leaderboard),
       new SlashCommandBuilder()
+        .setName("show_leaderboard")
+        .setDescription(L.discordSlashDescriptions.show_leaderboard),
+      new SlashCommandBuilder()
         .setName("removesnipe")
         .setDescription(L.discordSlashDescriptions.removesnipe)
         .addStringOption((o) =>
@@ -166,17 +191,8 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand() || !interaction.guild) return;
 
-    if (interaction.commandName === "leaderboard") {
-      try {
-        const parts = renderLeaderboardText(db, interaction.guild.id, interaction.guild.name);
-        await interaction.reply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
-        for (let i = 1; i < parts.length; i++) {
-          await interaction.followUp({ content: parts[i] });
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true });
-      }
+    if (interaction.commandName === "leaderboard" || interaction.commandName === "show_leaderboard") {
+      await replyDiscordLeaderboard(interaction, db);
       return;
     }
 

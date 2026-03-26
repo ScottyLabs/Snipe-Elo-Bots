@@ -17,6 +17,12 @@
         "should_escape": false
       },
       {
+        "command": "/show_leaderboard",
+        "url": "https://example.com/slack/events",
+        "description": "Show ELO leaderboard (alias of /leaderboard)",
+        "should_escape": false
+      },
+      {
         "command": "/removesnipe",
         "url": "https://example.com/slack/events",
         "description": "Undo last snipe in this thread",

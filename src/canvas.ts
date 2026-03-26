@@ -1,6 +1,7 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
 import { opsLog } from "./opsLog";
+import { escapeSlackTableCell, resolveSlackDisplayNames } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
 
 function slackErrorCode(err: unknown): string | undefined {
@@ -19,7 +20,7 @@ async function ensureBotInChannel(client: { conversations: { join: (a: { channel
   }
 }
 
-export function renderLeaderboardMarkdown(players: PlayerRating[]): string {
+export function renderLeaderboardMarkdown(players: PlayerRating[], displayNames: Map<string, string>): string {
   const rows = players.slice(0, config.leaderboard.topN);
 
   const header = `# ${config.leaderboard.title}\n`;
@@ -36,7 +37,8 @@ export function renderLeaderboardMarkdown(players: PlayerRating[]): string {
   for (let i = 0; i < rows.length; i++) {
     const p = rows[i];
     const rank = i + 1;
-    const playerLabel = `![](@${p.playerId})`;
+    const raw = displayNames.get(p.playerId) ?? p.playerId;
+    const playerLabel = escapeSlackTableCell(raw);
     lines.push(`| ${rank} | ${playerLabel} | ${p.rating} |`);
   }
 
@@ -70,7 +72,11 @@ export async function ensureLeaderboardCanvas(params: {
   await ensureBotInChannel(client, config.slack.channelId);
 
   const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const markdown = renderLeaderboardMarkdown(players);
+  const nameMap = await resolveSlackDisplayNames(
+    client,
+    players.map((p) => p.playerId)
+  );
+  const markdown = renderLeaderboardMarkdown(players, nameMap);
   let created: { canvas_id?: string; id?: string };
   try {
     created = await client.canvases.create({
@@ -101,7 +107,11 @@ export async function updateLeaderboardCanvas(params: {
 }): Promise<void> {
   const { client, db, canvasId } = params;
   const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const markdown = renderLeaderboardMarkdown(players);
+  const nameMap = await resolveSlackDisplayNames(
+    client,
+    players.map((p) => p.playerId)
+  );
+  const markdown = renderLeaderboardMarkdown(players, nameMap);
 
   await client.canvases.edit({
     canvas_id: canvasId,

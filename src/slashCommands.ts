@@ -7,3 +7,9 @@ export function normalizeSlashCommand(raw: string | undefined, defaultWithoutSla
   const body = trimmed.replace(/^\/+/, "") || defaultWithoutSlash.toLowerCase();
   return `/${body}`;
 }
+
+/** Plain-text command line: already trimmed and lowercased. */
+export function isCommandBody(textLower: string, commandWithoutSlash: string): boolean {
+  const c = commandWithoutSlash.replace(/^\//, "").toLowerCase();
+  return textLower === c || textLower.startsWith(`${c} `);
+}

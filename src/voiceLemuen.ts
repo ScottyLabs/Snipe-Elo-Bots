@@ -111,6 +111,7 @@ export function implicitSnipeProcessFailed(error: string): string {
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
   leaderboard: "Survey the standings—who's sitting pretty today?",
+  show_leaderboard: "Same as /leaderboard—post the ELO standings here.",
   removesnipe: "Strike a snipe from the record (bot confirmation message ID).",
   makeupsnipe: "Log a snipe that missed the camera—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",

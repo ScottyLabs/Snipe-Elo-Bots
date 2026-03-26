@@ -30,6 +30,23 @@ Do one of the following:
 
 **HTTP mode:** Set every slash command’s Request URL to your Bolt receiver, usually `https://<your-host>/slack/events`.
 
+### Typing `/adj` and Slack shows nothing?
+
+That is expected until the commands exist **on the same Slack app** whose **Bot User OAuth Token** you put in `SLACK_BOT_TOKEN`. Open [api.slack.com/apps](https://api.slack.com/apps) → select **that** app → **Slash Commands**. If the list is empty, Slack will not suggest `/adjustelo` or anything else from this bot.
+
+**Sanity check:** In the channel, type `/` and scroll the list—do you see *any* command from your Snipe ELO app? If not, create at least `/adjustelo` there (see table below), **reinstall the app to the workspace** if Slack prompts you, then try again.
+
+### Workaround: plain text commands (no `/`)
+
+Set **`SLACK_TEXT_COMMANDS_FALLBACK=true`**. In the snipe channel you can then send **normal messages** (Slack will not treat them as slash commands):
+
+| Plain text | Notes |
+|------------|--------|
+| `leaderboard` / `show_leaderboard` | Bot replies in the thread under your message. |
+| `removesnipe` | Send **inside the snipe thread** (same as slash behavior). |
+| `makeupsnipe <sniper> <sniped…>` | Same arguments as slash; mentions as `<@U…>`. |
+| `adjustelo <user> <delta>` | Same allowlist as slash (`ADJUSTELO_ALLOWED_SLACK_USER_IDS`). |
+
 ---
 
 Slack only treats user-facing “commands” as **slash commands** registered on your app (plain messages starting with `/` are handled by Slack’s own UI, not as normal channel text).
@@ -39,6 +56,7 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 | Command | Hint text (example) |
 |--------|----------------------|
 | `/leaderboard` | Show ELO leaderboard in channel |
+| `/show_leaderboard` | Same as `/leaderboard` (alias) |
 | `/removesnipe` | Undo last snipe in this thread |
 | `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
 | `/adjustelo` | Args: `<user> <delta>` (integer). **Slack:** only user IDs in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` (default `U09E6EHA5R8`). |
@@ -46,7 +64,7 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 - **Request URL** (HTTP mode): same base as Events API, usually `https://<host>/slack/events` for Bolt.
 - **Socket Mode**: commands are still delivered over the socket; you must still create each slash command in the app so Slack shows them in the composer.
 
-Override names with `SLACK_LEADERBOARD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
+Override names with `SLACK_LEADERBOARD_COMMAND`, `SLACK_SHOW_LEADERBOARD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
 
 ## Slack permissions (scopes)
 At minimum, your Slack app needs scopes to:
