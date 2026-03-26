@@ -48,8 +48,8 @@ export function parseUserToken(token: string): { ok: true; userId: string } | { 
   // Allow comma-separated tokens from user input.
   const cleaned = t.replace(/^[<@!\s]+|[>,.\s]+$/g, "").trim();
 
-  // <@U123> form
-  const mentionMatch = t.match(/<@([A-Z0-9]+)>/);
+  // <@U123> or Slack's usual <@U123|display name> in slash-command text
+  const mentionMatch = t.match(/<@([A-Z0-9]+)(?:\|[^>]+)?>/);
   if (mentionMatch) {
     return { ok: true, userId: mentionMatch[1] };
   }
