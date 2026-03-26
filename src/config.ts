@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { eloEnv } from "./eloEnv";
 
 // Avoid noisy "injecting env (0) from .env" on Railway (vars come from the platform, not a file).
 dotenv.config({ quiet: true });
@@ -19,12 +20,7 @@ export const config = {
     // If set, bot will run in Socket Mode.
     appToken: process.env.SLACK_APP_TOKEN,
   },
-  elo: {
-    kFactor: Number(process.env.ELO_K_FACTOR ?? 32),
-    initialRating: Number(process.env.INITIAL_RATING ?? 1000),
-    // Used only for display truncation, not the ELO math itself.
-    decimals: 0,
-  },
+  elo: eloEnv,
   leaderboard: {
     title: process.env.LEADERBOARD_CANVAS_TITLE ?? "ELO Leaderboard",
     topN: Number(process.env.LEADERBOARD_TOP_N ?? 50),

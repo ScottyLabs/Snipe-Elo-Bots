@@ -2,9 +2,10 @@ import Database from "better-sqlite3";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { config } from "./config";
+import { eloEnv } from "./eloEnv";
 import { computePairRatingDeltas } from "./elo";
 import { opsLog } from "./opsLog";
+import { SLACK_GUILD_ID } from "./tenants";
 
 export type PlayerRating = { playerId: string; rating: number };
 
@@ -28,6 +29,7 @@ export type PlayerChange = {
 
 export type SnipeEventRow = {
   snipeId: string;
+  guildId: string;
   type: string;
   channelId: string;
   threadTs: string;
@@ -44,12 +46,34 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
+function mapSnipeRow(row: Record<string, unknown>): SnipeEventRow {
+  return {
+    snipeId: row.snipe_id as string,
+    guildId: row.guild_id as string,
+    type: row.type as string,
+    channelId: row.channel_id as string,
+    threadTs: row.thread_ts as string,
+    sourceMessageTs: (row.source_message_ts as string | null) ?? null,
+    sniperId: (row.sniper_id as string | null) ?? null,
+    snipedIdsJson: (row.sniped_ids_json as string | null) ?? null,
+    undoneOfSnipeId: (row.undone_of_snipe_id as string | null) ?? null,
+    undoneAt: (row.undone_at as number | null) ?? null,
+    confirmationMessageTs: (row.confirmation_message_ts as string | null) ?? null,
+    createdAt: row.created_at as number,
+  };
+}
+
+export type EloDbOptions = {
+  /** Rows without guild_id (pre-migration) are assigned to this tenant. Slack: SLACK_GUILD_ID; Discord: configured guild. */
+  tenantIdForLegacyMigration?: string;
+};
+
 export class EloDb {
   private db: Database.Database;
+  private readonly tenantIdForLegacyMigration: string;
 
-  constructor(dbPath: string) {
-    // better-sqlite3 does not create parent directories; Railway volume paths
-    // like /data/snipe.sqlite fail if /data is missing until first mount step.
+  constructor(dbPath: string, opts?: EloDbOptions) {
+    this.tenantIdForLegacyMigration = opts?.tenantIdForLegacyMigration ?? SLACK_GUILD_ID;
     let openPath = dbPath;
     if (dbPath && dbPath !== ":memory:") {
       openPath = path.resolve(dbPath);
@@ -69,13 +93,16 @@ export class EloDb {
       );
 
       CREATE TABLE IF NOT EXISTS players(
-        player_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        player_id TEXT NOT NULL,
         rating INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(guild_id, player_id)
       );
 
       CREATE TABLE IF NOT EXISTS snipe_events(
         snipe_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
         type TEXT NOT NULL,
         channel_id TEXT NOT NULL,
         thread_ts TEXT NOT NULL,
@@ -110,62 +137,137 @@ export class EloDb {
         PRIMARY KEY(snipe_id, pair_idx)
       );
     `);
+    this.migrateLegacySchemaIfNeeded();
   }
 
-  getMeta(key: string): string | null {
-    const row = this.db.prepare(`SELECT value FROM kv WHERE key = ?`).get(key) as
+  private tableHasColumn(table: string, column: string): boolean {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    return cols.some((c) => c.name === column);
+  }
+
+  private migrateLegacySchemaIfNeeded() {
+    const legacyTenant = this.tenantIdForLegacyMigration;
+    if (!this.tableHasColumn("players", "guild_id")) {
+      this.db.exec(`
+        CREATE TABLE players__mig(
+          guild_id TEXT NOT NULL,
+          player_id TEXT NOT NULL,
+          rating INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY(guild_id, player_id)
+        );
+        INSERT INTO players__mig SELECT '${legacyTenant.replace(/'/g, "''")}', player_id, rating, updated_at FROM players;
+        DROP TABLE players;
+        ALTER TABLE players__mig RENAME TO players;
+      `);
+      opsLog("db.migrate", { table: "players", legacyTenant });
+    }
+
+    if (!this.tableHasColumn("snipe_events", "guild_id")) {
+      this.db.exec(`
+        CREATE TABLE snipe_events__mig(
+          snipe_id TEXT PRIMARY KEY,
+          guild_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          thread_ts TEXT NOT NULL,
+          source_message_ts TEXT,
+          sniper_id TEXT,
+          sniped_ids_json TEXT,
+          undone_of_snipe_id TEXT,
+          undone_at INTEGER,
+          confirmation_message_ts TEXT,
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO snipe_events__mig
+        SELECT snipe_id, '${legacyTenant.replace(/'/g, "''")}', type, channel_id, thread_ts, source_message_ts,
+               sniper_id, sniped_ids_json, undone_of_snipe_id, undone_at, confirmation_message_ts, created_at
+        FROM snipe_events;
+        DROP TABLE snipe_events;
+        ALTER TABLE snipe_events__mig RENAME TO snipe_events;
+      `);
+      opsLog("db.migrate", { table: "snipe_events", legacyTenant });
+    }
+
+    const kvNeedsNs = this.db
+      .prepare(`SELECT 1 FROM kv WHERE instr(key, '::') = 0 LIMIT 1`)
+      .get() as { 1: number } | undefined;
+    if (kvNeedsNs) {
+      const prefix = `${legacyTenant.replace(/'/g, "''")}::`;
+      this.db.exec(`
+        CREATE TABLE kv__mig(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO kv__mig
+        SELECT CASE WHEN instr(key, '::') > 0 THEN key ELSE '${prefix}' || key END, value FROM kv;
+        DROP TABLE kv;
+        ALTER TABLE kv__mig RENAME TO kv;
+      `);
+      opsLog("db.migrate", { table: "kv", legacyTenant });
+    }
+  }
+
+  private metaKey(guildId: string, key: string): string {
+    return `${guildId}::${key}`;
+  }
+
+  getMeta(guildId: string, key: string): string | null {
+    const row = this.db.prepare(`SELECT value FROM kv WHERE key = ?`).get(this.metaKey(guildId, key)) as
       | { value: string }
       | undefined;
     return row?.value ?? null;
   }
 
-  setMeta(key: string, value: string) {
-    const stmt = this.db.prepare(`INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
-    stmt.run(key, value);
+  setMeta(guildId: string, key: string, value: string) {
+    const stmt = this.db.prepare(
+      `INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    );
+    stmt.run(this.metaKey(guildId, key), value);
   }
 
-  ensurePlayers(playerIds: string[]) {
+  ensurePlayers(guildId: string, playerIds: string[]) {
     const now = Date.now();
     const insert = this.db.prepare(
-      `INSERT INTO players(player_id, rating, updated_at)
-       SELECT ?, ?, ?
-       WHERE NOT EXISTS(SELECT 1 FROM players WHERE player_id = ?)`
+      `INSERT INTO players(guild_id, player_id, rating, updated_at)
+       SELECT ?, ?, ?, ?
+       WHERE NOT EXISTS(SELECT 1 FROM players WHERE guild_id = ? AND player_id = ?)`
     );
     const seen = new Set<string>();
     for (const id of playerIds) {
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      insert.run(id, config.elo.initialRating, now, id);
+      insert.run(guildId, id, eloEnv.initialRating, now, guildId, id);
     }
   }
 
-  getRatings(playerIds: string[]): Map<string, number> {
+  getRatings(guildId: string, playerIds: string[]): Map<string, number> {
     const ids = [...new Set(playerIds)].filter(Boolean);
     if (ids.length === 0) return new Map();
     const placeholders = ids.map(() => "?").join(",");
     const rows = this.db
-      .prepare(`SELECT player_id, rating FROM players WHERE player_id IN (${placeholders})`)
-      .all(...ids) as { player_id: string; rating: number }[];
+      .prepare(`SELECT player_id, rating FROM players WHERE guild_id = ? AND player_id IN (${placeholders})`)
+      .all(guildId, ...ids) as { player_id: string; rating: number }[];
 
     const map = new Map<string, number>();
     for (const r of rows) map.set(r.player_id, r.rating);
     return map;
   }
 
-  getAllPlayersSorted(): PlayerRating[] {
+  getAllPlayersSorted(guildId: string): PlayerRating[] {
     const rows = this.db
-      .prepare(`SELECT player_id, rating FROM players ORDER BY rating DESC, player_id ASC`)
-      .all() as { player_id: string; rating: number }[];
+      .prepare(
+        `SELECT player_id, rating FROM players WHERE guild_id = ? ORDER BY rating DESC, player_id ASC`
+      )
+      .all(guildId) as { player_id: string; rating: number }[];
     return rows.map((r) => ({ playerId: r.player_id, rating: r.rating }));
   }
 
-  setConfirmationMessageTs(snipeId: string, confirmationMessageTs: string) {
+  setConfirmationMessageTs(guildId: string, snipeId: string, confirmationMessageTs: string) {
     this.db
-      .prepare(`UPDATE snipe_events SET confirmation_message_ts = ? WHERE snipe_id = ?`)
-      .run(confirmationMessageTs, snipeId);
+      .prepare(`UPDATE snipe_events SET confirmation_message_ts = ? WHERE snipe_id = ? AND guild_id = ?`)
+      .run(confirmationMessageTs, snipeId, guildId);
   }
 
   applySnipe(args: {
+    guildId: string;
     type: "snipe" | "makeup";
     channelId: string;
     threadTs: string;
@@ -179,6 +281,7 @@ export class EloDb {
     playerChanges: PlayerChange[];
     finalRatings: Map<string, number>;
   } {
+    const guildId = args.guildId;
     const now = Date.now();
     const snipeId = newId();
     const sniperId = args.sniperId;
@@ -188,9 +291,9 @@ export class EloDb {
     }
 
     const involvedIds = [sniperId, ...snipedIds];
-    this.ensurePlayers(involvedIds);
+    this.ensurePlayers(guildId, involvedIds);
 
-    const startRatings = this.getRatings(involvedIds);
+    const startRatings = this.getRatings(guildId, involvedIds);
     const currentRatings = new Map(startRatings);
 
     const pairMatches: PairMatch[] = [];
@@ -223,7 +326,6 @@ export class EloDb {
       });
     }
 
-    // Build per-player net changes for easy logging/undo.
     const playerChanges: PlayerChange[] = [];
     for (const playerId of involvedIds) {
       const beforeRating = startRatings.get(playerId)!;
@@ -243,6 +345,7 @@ export class EloDb {
         .prepare(
           `INSERT INTO snipe_events(
             snipe_id,
+            guild_id,
             type,
             channel_id,
             thread_ts,
@@ -253,10 +356,11 @@ export class EloDb {
             undone_at,
             confirmation_message_ts,
             created_at
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
         )
         .run(
           snipeId,
+          guildId,
           args.type,
           args.channelId,
           args.threadTs,
@@ -270,18 +374,18 @@ export class EloDb {
         );
 
       const updatePlayer = this.db.prepare(
-        `UPDATE players SET rating = ?, updated_at = ? WHERE player_id = ?`
+        `UPDATE players SET rating = ?, updated_at = ? WHERE guild_id = ? AND player_id = ?`
       );
       const insertPlayer = this.db.prepare(
-        `INSERT INTO players(player_id, rating, updated_at) VALUES(?,?,?)`
+        `INSERT INTO players(guild_id, player_id, rating, updated_at) VALUES(?,?,?,?)`
       );
 
       for (const change of playerChanges) {
         const exists = this.db
-          .prepare(`SELECT 1 FROM players WHERE player_id = ?`)
-          .get(change.playerId);
-        if (exists) updatePlayer.run(change.afterRating, now, change.playerId);
-        else insertPlayer.run(change.playerId, change.afterRating, now);
+          .prepare(`SELECT 1 FROM players WHERE guild_id = ? AND player_id = ?`)
+          .get(guildId, change.playerId);
+        if (exists) updatePlayer.run(change.afterRating, now, guildId, change.playerId);
+        else insertPlayer.run(guildId, change.playerId, change.afterRating, now);
 
         this.db
           .prepare(
@@ -322,6 +426,7 @@ export class EloDb {
 
     for (const c of playerChanges) {
       opsLog("elo.change", {
+        guildId,
         snipeId,
         source: args.type,
         channelId: args.channelId,
@@ -333,6 +438,7 @@ export class EloDb {
       });
     }
     opsLog("elo.snipe.commit", {
+      guildId,
       snipeId,
       source: args.type,
       channelId: args.channelId,
@@ -346,34 +452,42 @@ export class EloDb {
     return { snipeId, pairMatches, playerChanges, finalRatings: currentRatings };
   }
 
-  getLatestUndoableSnipeEventForThread(threadTs: string): SnipeEventRow | null {
+  getUndoableSnipeByConfirmationMessageId(guildId: string, confirmationMessageId: string): SnipeEventRow | null {
     const row = this.db
       .prepare(
         `
       SELECT *
       FROM snipe_events
-      WHERE thread_ts = ?
+      WHERE guild_id = ?
+        AND confirmation_message_ts = ?
         AND type IN ('snipe','makeup')
         AND undone_at IS NULL
       ORDER BY created_at DESC
       LIMIT 1
     `
       )
-      .get(threadTs) as any;
+      .get(guildId, confirmationMessageId) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return {
-      snipeId: row.snipe_id,
-      type: row.type,
-      channelId: row.channel_id,
-      threadTs: row.thread_ts,
-      sourceMessageTs: row.source_message_ts ?? null,
-      sniperId: row.sniper_id ?? null,
-      snipedIdsJson: row.sniped_ids_json ?? null,
-      undoneOfSnipeId: row.undone_of_snipe_id ?? null,
-      undoneAt: row.undone_at ?? null,
-      confirmationMessageTs: row.confirmation_message_ts ?? null,
-      createdAt: row.created_at,
-    };
+    return mapSnipeRow(row);
+  }
+
+  getLatestUndoableSnipeEventForThread(guildId: string, threadTs: string): SnipeEventRow | null {
+    const row = this.db
+      .prepare(
+        `
+      SELECT *
+      FROM snipe_events
+      WHERE guild_id = ?
+        AND thread_ts = ?
+        AND type IN ('snipe','makeup')
+        AND undone_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+      )
+      .get(guildId, threadTs) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return mapSnipeRow(row);
   }
 
   getEventPlayerChanges(snipeId: string): PlayerChange[] {
@@ -393,13 +507,19 @@ export class EloDb {
     }));
   }
 
-  undoSnipeEvent(args: { channelId: string; threadTs: string; snipeIdToUndo: string }): {
+  undoSnipeEvent(args: {
+    guildId: string;
+    channelId: string;
+    threadTs: string;
+    snipeIdToUndo: string;
+  }): {
     undoSnipeId: string;
     playerChanges: PlayerChange[];
   } {
+    const guildId = args.guildId;
     const original = this.db
-      .prepare(`SELECT * FROM snipe_events WHERE snipe_id = ?`)
-      .get(args.snipeIdToUndo) as any | undefined;
+      .prepare(`SELECT * FROM snipe_events WHERE snipe_id = ? AND guild_id = ?`)
+      .get(args.snipeIdToUndo, guildId) as Record<string, unknown> | undefined;
     if (!original) throw new Error("snipe_not_found");
     if (original.undone_at) throw new Error("snipe_already_undone");
 
@@ -408,10 +528,9 @@ export class EloDb {
     const playerChangesOriginal = this.getEventPlayerChanges(args.snipeIdToUndo);
     const involvedIds = playerChangesOriginal.map((c) => c.playerId);
 
-    this.ensurePlayers(involvedIds);
-    const currentRatings = this.getRatings(involvedIds);
+    this.ensurePlayers(guildId, involvedIds);
+    const currentRatings = this.getRatings(guildId, involvedIds);
 
-    // Safety: only undo if the event's final state is still the current state.
     const mismatch = playerChangesOriginal.find((c) => {
       const current = currentRatings.get(c.playerId)!;
       return current !== c.afterRating;
@@ -425,16 +544,15 @@ export class EloDb {
     }
 
     const tx = this.db.transaction(() => {
-      // Mark original as undone.
       this.db
-        .prepare(`UPDATE snipe_events SET undone_at = ? WHERE snipe_id = ?`)
-        .run(now, args.snipeIdToUndo);
+        .prepare(`UPDATE snipe_events SET undone_at = ? WHERE snipe_id = ? AND guild_id = ?`)
+        .run(now, args.snipeIdToUndo, guildId);
 
-      // Create an undo event row (also logged).
       this.db
         .prepare(
           `INSERT INTO snipe_events(
             snipe_id,
+            guild_id,
             type,
             channel_id,
             thread_ts,
@@ -445,10 +563,11 @@ export class EloDb {
             undone_at,
             confirmation_message_ts,
             created_at
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
         )
         .run(
           undoSnipeId,
+          guildId,
           "undo",
           args.channelId,
           args.threadTs,
@@ -462,7 +581,7 @@ export class EloDb {
         );
 
       const updatePlayer = this.db.prepare(
-        `UPDATE players SET rating = ?, updated_at = ? WHERE player_id = ?`
+        `UPDATE players SET rating = ?, updated_at = ? WHERE guild_id = ? AND player_id = ?`
       );
 
       const undoPlayerChanges: PlayerChange[] = [];
@@ -470,7 +589,7 @@ export class EloDb {
         const before = orig.afterRating;
         const after = orig.beforeRating;
         const delta = after - before;
-        updatePlayer.run(after, now, orig.playerId);
+        updatePlayer.run(after, now, guildId, orig.playerId);
 
         undoPlayerChanges.push({
           playerId: orig.playerId,
@@ -497,6 +616,7 @@ export class EloDb {
     const undoPlayerChanges = tx() as PlayerChange[];
     for (const c of undoPlayerChanges) {
       opsLog("elo.change", {
+        guildId,
         snipeId: undoSnipeId,
         source: "undo",
         undoesSnipeId: args.snipeIdToUndo,
@@ -509,6 +629,7 @@ export class EloDb {
       });
     }
     opsLog("elo.undo.commit", {
+      guildId,
       undoSnipeId,
       undoesSnipeId: args.snipeIdToUndo,
       channelId: args.channelId,
@@ -518,4 +639,3 @@ export class EloDb {
     return { undoSnipeId, playerChanges: undoPlayerChanges };
   }
 }
-

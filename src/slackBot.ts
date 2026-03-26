@@ -11,6 +11,7 @@ import {
   parseUserToken,
 } from "./parse";
 import { opsLog } from "./opsLog";
+import { SLACK_GUILD_ID } from "./tenants";
 
 function uniquePreserveOrder<T>(arr: T[]): T[] {
   const seen = new Set<T>();
@@ -122,6 +123,7 @@ export async function startSlackBot(params: {
     const canvasId = await ensureCanvasOnce();
 
     const result = params.db.applySnipe({
+      guildId: SLACK_GUILD_ID,
       type: args.type,
       channelId: args.channelId,
       threadTs: args.threadTs,
@@ -147,7 +149,7 @@ export async function startSlackBot(params: {
 
     const confirmationTs = await postToThread(args.channelId, args.threadTs, confirmationText);
     if (confirmationTs) {
-      params.db.setConfirmationMessageTs(result.snipeId, confirmationTs);
+      params.db.setConfirmationMessageTs(SLACK_GUILD_ID, result.snipeId, confirmationTs);
     }
 
     await updateLeaderboardCanvas({ client: app.client, db: params.db, canvasId });
@@ -187,7 +189,7 @@ export async function startSlackBot(params: {
           textPreview: text.slice(0, 120),
         });
         try {
-          const snipe = params.db.getLatestUndoableSnipeEventForThread(threadTs);
+          const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);
           if (!snipe) {
             opsLog("command.removesnipe.result", { result: "nothing_to_undo", threadTs });
             await client.chat.postMessage({
@@ -201,6 +203,7 @@ export async function startSlackBot(params: {
           // Undo.
           opsLog("command.removesnipe.undoing", { snipeId: snipe.snipeId, threadTs });
           const undoResult = params.db.undoSnipeEvent({
+            guildId: SLACK_GUILD_ID,
             channelId,
             threadTs,
             snipeIdToUndo: snipe.snipeId,

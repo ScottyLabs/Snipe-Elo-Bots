@@ -1,6 +1,7 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
 import { opsLog } from "./opsLog";
+import { SLACK_GUILD_ID } from "./tenants";
 
 function slackErrorCode(err: unknown): string | undefined {
   const e = err as { data?: { error?: string } };
@@ -52,9 +53,9 @@ export async function ensureLeaderboardCanvas(params: {
   // Env wins over SQLite so redeploys / empty DB still reuse the same canvas (only edits, no new create).
   const fromEnv = config.leaderboard.canvasIdOverride;
   if (fromEnv) {
-    const stored = db.getMeta("leaderboard_canvas_id");
+    const stored = db.getMeta(SLACK_GUILD_ID, "leaderboard_canvas_id");
     if (stored !== fromEnv) {
-      db.setMeta("leaderboard_canvas_id", fromEnv);
+      db.setMeta(SLACK_GUILD_ID, "leaderboard_canvas_id", fromEnv);
       if (stored) {
         opsLog("canvas.leaderboard.id_source", { source: "env_override", previousCanvasId: stored, canvasId: fromEnv });
       }
@@ -62,13 +63,13 @@ export async function ensureLeaderboardCanvas(params: {
     return fromEnv;
   }
 
-  const existing = db.getMeta("leaderboard_canvas_id");
+  const existing = db.getMeta(SLACK_GUILD_ID, "leaderboard_canvas_id");
   if (existing) return existing;
 
   // No env id and none in DB: create once, then all later updates use canvases.edit only.
   await ensureBotInChannel(client, config.slack.channelId);
 
-  const players = db.getAllPlayersSorted();
+  const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
   const markdown = renderLeaderboardMarkdown(players);
   let created: { canvas_id?: string; id?: string };
   try {
@@ -89,7 +90,7 @@ export async function ensureLeaderboardCanvas(params: {
   }
   const canvasId = created?.canvas_id ?? created?.id;
   if (!canvasId) throw new Error("failed_to_create_canvas");
-  db.setMeta("leaderboard_canvas_id", canvasId);
+  db.setMeta(SLACK_GUILD_ID, "leaderboard_canvas_id", canvasId);
   opsLog("canvas.leaderboard.created", { canvasId, title });
   return canvasId;
 }
@@ -100,7 +101,7 @@ export async function updateLeaderboardCanvas(params: {
   canvasId: string;
 }): Promise<void> {
   const { client, db, canvasId } = params;
-  const players = db.getAllPlayersSorted();
+  const players = db.getAllPlayersSorted(SLACK_GUILD_ID);
   const markdown = renderLeaderboardMarkdown(players);
 
   await client.canvases.edit({

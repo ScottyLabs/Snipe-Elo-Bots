@@ -1,4 +1,4 @@
-import { config } from "./config";
+import { eloEnv } from "./eloEnv";
 
 export function expectedScore(playerRating: number, opponentRating: number): number {
   // Standard Elo expected score formula.
@@ -12,7 +12,7 @@ function computeEloDelta(params: {
 }): number {
   const { playerRating, opponentRating, score } = params;
   const expected = expectedScore(playerRating, opponentRating);
-  const rawDelta = config.elo.kFactor * (score - expected);
+  const rawDelta = eloEnv.kFactor * (score - expected);
   // Keep ratings integer for simplicity.
   return Math.round(rawDelta);
 }

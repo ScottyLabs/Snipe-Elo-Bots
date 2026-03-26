@@ -25,7 +25,8 @@ export function formatSnipeConfirmation(params: {
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
-    return `- <@${m.snipedId}>: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}.`;
+    const sniperDelta = m.sniperAfter - m.sniperBefore;
+    return `- <@${m.sniperId}>: ${formatSigned(sniperDelta)}\n  <@${m.snipedId}>: ${formatSigned(snipedDelta)}`;
   });
 
   return [
