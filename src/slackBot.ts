@@ -2,7 +2,7 @@ import { App, type CustomRoute } from "@slack/bolt";
 import { config } from "./config";
 import { EloDb } from "./db";
 import { ensureLeaderboardCanvas, updateLeaderboardCanvas } from "./canvas";
-import { formatSnipeConfirmation, formatUndoConfirmation } from "./snipe";
+import { formatAdjustEloConfirmation, formatSnipeConfirmation, formatUndoConfirmation } from "./snipe";
 import {
   isLikelyImageMessage,
   isProcessableUserMessageEvent,
@@ -11,6 +11,7 @@ import {
   parseUserToken,
 } from "./parse";
 import { opsLog } from "./opsLog";
+import { isSlashCommandBody } from "./slashCommands";
 import { SLACK_GUILD_ID } from "./tenants";
 
 function uniquePreserveOrder<T>(arr: T[]): T[] {
@@ -180,7 +181,7 @@ export async function startSlackBot(params: {
       const lower = text.toLowerCase();
 
       // Undo command in thread.
-      if (text && lower.startsWith(config.slackOps.undoCommand) && threadTs) {
+      if (text && threadTs && isSlashCommandBody(lower, config.slackOps.undoCommand)) {
         opsLog("command.removesnipe", {
           userId,
           channelId,
@@ -244,7 +245,7 @@ export async function startSlackBot(params: {
       }
 
       // Makeupsnipe command.
-      if (text && lower.startsWith(config.slackOps.makeupCommand)) {
+      if (text && isSlashCommandBody(lower, config.slackOps.makeupCommand)) {
         opsLog("command.makeupsnipe", {
           userId,
           channelId,
@@ -296,7 +297,79 @@ export async function startSlackBot(params: {
           opsLog("command.makeupsnipe.result", { result: "error", error: e?.message ?? String(e) });
           await client.chat.postMessage({
             channel: channelId,
-            text: `makeupsnipe failed: ${e?.message ?? String(e)}`,
+            text: `${config.slackOps.makeupCommand} failed: ${e?.message ?? String(e)}`,
+          });
+          return;
+        }
+      }
+
+      // Manual ELO adjustment: /adjustelo @user <integer delta>
+      if (text && isSlashCommandBody(lower, config.slackOps.adjustEloCommand)) {
+        opsLog("command.adjustelo", {
+          userId,
+          channelId,
+          messageTs: ts,
+          textPreview: text.slice(0, 200),
+        });
+        try {
+          const parts = text.split(/\s+/).filter(Boolean);
+          if (parts.length < 3) {
+            opsLog("command.adjustelo.result", { result: "usage_error", argCount: parts.length });
+            await client.chat.postMessage({
+              channel: channelId,
+              text: `Usage: ${config.slackOps.adjustEloCommand} <user> <delta> — delta is a whole number (e.g. +50 or -25).`,
+            });
+            return;
+          }
+
+          const userTok = parseUserToken(parts[1]);
+          if (!userTok.ok) {
+            opsLog("command.adjustelo.result", { result: "parse_user_failed" });
+            await client.chat.postMessage({
+              channel: channelId,
+              text: `Could not parse user. Use a Slack mention like <@U123>.`,
+            });
+            return;
+          }
+
+          const delta = Number(parts[2]);
+          if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+            opsLog("command.adjustelo.result", { result: "parse_delta_failed" });
+            await client.chat.postMessage({
+              channel: channelId,
+              text: `Delta must be a whole number (got: ${parts[2]}).`,
+            });
+            return;
+          }
+
+          const change = params.db.adjustPlayerRating({
+            guildId: SLACK_GUILD_ID,
+            playerId: userTok.userId,
+            delta,
+          });
+          const canvasId = await ensureCanvasOnce();
+          await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+
+          await client.chat.postMessage({
+            channel: channelId,
+            text: formatAdjustEloConfirmation({
+              playerId: change.playerId,
+              beforeRating: change.beforeRating,
+              afterRating: change.afterRating,
+              delta: change.delta,
+            }),
+          });
+          opsLog("command.adjustelo.result", {
+            result: "ok",
+            targetUserId: userTok.userId,
+            delta,
+          });
+          return;
+        } catch (e: any) {
+          opsLog("command.adjustelo.result", { result: "error", error: e?.message ?? String(e) });
+          await client.chat.postMessage({
+            channel: channelId,
+            text: `${config.slackOps.adjustEloCommand} failed: ${e?.message ?? String(e)}`,
           });
           return;
         }

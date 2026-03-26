@@ -47,7 +47,7 @@ When detected, the bot will:
 
 To undo a snipe, reply in the thread to the bot’s confirmation message with:
 
-- `removesnipe`
+- `/removesnipe` (leading slash required; override with `UNDO_COMMAND`)
 
 The bot will revert the affected ELOs (with a safety check that the ratings haven’t changed since that snipe), post an undo confirmation in the thread, and update the leaderboard canvas.
 
@@ -55,7 +55,7 @@ The bot will revert the affected ELOs (with a safety check that the ratings have
 
 Use:
 
-- `makeupsnipe <sniper> <sniped1> <sniped2> ...`
+- `/makeupsnipe <sniper> <sniped1> <sniped2> ...` (leading slash required; override with `MAKEUP_COMMAND`)
 
 `<sniper>` / `<sniped*>` should be Slack mentions like `<@U12345>`.
 

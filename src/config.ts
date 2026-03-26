@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { eloEnv } from "./eloEnv";
+import { normalizeSlashCommand } from "./slashCommands";
 
 // Avoid noisy "injecting env (0) from .env" on Railway (vars come from the platform, not a file).
 dotenv.config({ quiet: true });
@@ -29,8 +30,9 @@ export const config = {
   },
   slackOps: {
     implicitSnipeEmoji: "dart",
-    undoCommand: (process.env.UNDO_COMMAND ?? "removesnipe").toLowerCase(),
-    makeupCommand: (process.env.MAKEUP_COMMAND ?? "makeupsnipe").toLowerCase(),
+    undoCommand: normalizeSlashCommand(process.env.UNDO_COMMAND, "removesnipe"),
+    makeupCommand: normalizeSlashCommand(process.env.MAKEUP_COMMAND, "makeupsnipe"),
+    adjustEloCommand: normalizeSlashCommand(process.env.ADJUSTELO_COMMAND, "adjustelo"),
     /** If false, mentioning others counts as a snipe without an image (easier testing / alternate rules). */
     snipeRequireImage: !["0", "false", "no", "off"].includes(
       (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()

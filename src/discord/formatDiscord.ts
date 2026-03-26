@@ -36,3 +36,13 @@ export function formatSnipeConfirmation(params: {
 export function formatUndoConfirmation(playerChanges: PlayerChange[]): string {
   return [`Snipe undone.`, "", "ELOs after undo:", formatPlayerListElo(playerChanges)].join("\n");
 }
+
+export function formatAdjustEloConfirmation(params: {
+  playerId: string;
+  beforeRating: number;
+  afterRating: number;
+  delta: number;
+}): string {
+  const { playerId, beforeRating, afterRating, delta } = params;
+  return `${mention(playerId)}: ${beforeRating} → ${afterRating} (${formatSigned(delta)})`;
+}

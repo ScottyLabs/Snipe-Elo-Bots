@@ -9,8 +9,13 @@ import {
 } from "discord.js";
 import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
+import { isSlashCommandBody } from "../slashCommands";
 import { discordConfig } from "./configDiscord";
-import { formatSnipeConfirmation, formatUndoConfirmation } from "./formatDiscord";
+import {
+  formatAdjustEloConfirmation,
+  formatSnipeConfirmation,
+  formatUndoConfirmation,
+} from "./formatDiscord";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
 
 const DART = "🎯";
@@ -121,6 +126,13 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
             .setDescription("Who was sniped — use @mentions, e.g. @a @b")
             .setRequired(true)
         ),
+      new SlashCommandBuilder()
+        .setName("adjustelo")
+        .setDescription("Manually add or subtract ELO for a player")
+        .addUserOption((o) => o.setName("player").setDescription("Whose rating to change").setRequired(true))
+        .addIntegerOption((o) =>
+          o.setName("delta").setDescription("Amount to add (positive) or subtract (negative)").setRequired(true)
+        ),
     ].map((cmd) => cmd.toJSON());
 
     try {
@@ -196,6 +208,45 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         const msg = e instanceof Error ? e.message : String(e);
         await interaction.editReply({ content: `makeupsnipe failed: ${msg}` });
       }
+      return;
+    }
+
+    if (interaction.commandName === "adjustelo") {
+      const expectedCh = discordConfig.guildSnipeChannels.get(interaction.guild.id);
+      if (!expectedCh || interaction.channelId !== expectedCh) {
+        await interaction.reply({
+          content: expectedCh
+            ? `Use this command in <#${expectedCh}>.`
+            : "This server is not configured for snipe ELO (missing guild→channel mapping).",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const target = interaction.options.getUser("player", true);
+      const delta = interaction.options.getInteger("delta", true);
+
+      await interaction.deferReply();
+
+      try {
+        const change = db.adjustPlayerRating({
+          guildId: interaction.guild.id,
+          playerId: target.id,
+          delta,
+        });
+        await interaction.editReply({
+          content: formatAdjustEloConfirmation({
+            playerId: change.playerId,
+            beforeRating: change.beforeRating,
+            afterRating: change.afterRating,
+            delta: change.delta,
+          }),
+        });
+        opsLog("discord.adjustelo.ok", { guildId: interaction.guild.id, playerId: target.id, delta });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: `adjustelo failed: ${msg}` });
+      }
     }
   });
 
@@ -208,9 +259,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       const lower = message.content.trim().toLowerCase();
       const refId = message.reference?.messageId;
 
-      const isUndo =
-        refId &&
-        (lower === discordConfig.undoCommand || lower.startsWith(`${discordConfig.undoCommand} `));
+      const isUndo = refId && isSlashCommandBody(lower, discordConfig.undoCommand);
       if (isUndo) {
         const snipe = db.getUndoableSnipeByConfirmationMessageId(message.guild.id, refId);
         if (!snipe) {

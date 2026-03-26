@@ -266,6 +266,43 @@ export class EloDb {
       .run(confirmationMessageTs, snipeId, guildId);
   }
 
+  /**
+   * Applies an integer delta to one player's rating (row is created at initial rating if missing).
+   */
+  adjustPlayerRating(args: { guildId: string; playerId: string; delta: number }): PlayerChange {
+    const { guildId, playerId, delta } = args;
+    if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+      throw new Error("delta_must_be_integer");
+    }
+    const now = Date.now();
+    this.ensurePlayers(guildId, [playerId]);
+    const beforeRating = this.getRatings(guildId, [playerId]).get(playerId);
+    if (beforeRating === undefined) {
+      throw new Error("player_rating_missing");
+    }
+    const afterRating = beforeRating + delta;
+    this.db
+      .prepare(`UPDATE players SET rating = ?, updated_at = ? WHERE guild_id = ? AND player_id = ?`)
+      .run(afterRating, now, guildId, playerId);
+
+    const change: PlayerChange = {
+      playerId,
+      beforeRating,
+      afterRating,
+      delta,
+    };
+    opsLog("elo.change", {
+      guildId,
+      source: "manual_adjust",
+      playerId,
+      beforeRating,
+      afterRating,
+      delta,
+    });
+    opsLog("elo.adjust.commit", { guildId, playerId, delta, afterRating });
+    return change;
+  }
+
   applySnipe(args: {
     guildId: string;
     type: "snipe" | "makeup";

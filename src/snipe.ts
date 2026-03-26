@@ -54,3 +54,13 @@ export function formatUndoConfirmation(params: {
   ].join("\n");
 }
 
+export function formatAdjustEloConfirmation(params: {
+  playerId: string;
+  beforeRating: number;
+  afterRating: number;
+  delta: number;
+}): string {
+  const { playerId, beforeRating, afterRating, delta } = params;
+  return `<@${playerId}>: ${beforeRating} → ${afterRating} (${formatSigned(delta)})`;
+}
+
