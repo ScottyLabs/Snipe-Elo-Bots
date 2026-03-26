@@ -20,15 +20,20 @@ async function ensureBotInChannel(client: { conversations: { join: (a: { channel
   }
 }
 
+/** One heading + table only; native canvas title is cleared on update so Slack does not stack title bar + body (huge gap). */
+function normalizeCanvasMarkdown(markdown: string): string {
+  return markdown.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
 export function renderLeaderboardMarkdown(players: PlayerRating[], displayNames: Map<string, string>): string {
   const rows = players.slice(0, config.leaderboard.topN);
+  const title = config.leaderboard.title;
 
-  // Canvas `title` is set on create—do not repeat as `# …` here or Slack shows two headings with a large gap.
   if (rows.length === 0) {
-    return "_No ratings yet._";
+    return normalizeCanvasMarkdown(`# ${title}\n\n_No ratings yet._`);
   }
 
-  const lines: string[] = ["| Rank | Player | ELO |", "|---:|---|---:|"];
+  const lines: string[] = [`# ${title}`, "", "| Rank | Player | ELO |", "|---:|---|---:|"];
 
   for (let i = 0; i < rows.length; i++) {
     const p = rows[i];
@@ -38,7 +43,26 @@ export function renderLeaderboardMarkdown(players: PlayerRating[], displayNames:
     lines.push(`| ${rank} | ${playerLabel} | ${p.rating} |`);
   }
 
-  return lines.join("\n");
+  return normalizeCanvasMarkdown(lines.join("\n"));
+}
+
+/** Invisible title so the channel tab still has a label without duplicating the visible `# …` heading. */
+const CANVAS_TAB_TITLE = "\u200b";
+
+async function setCanvasTabTitle(client: { canvases: { edit: (a: unknown) => Promise<unknown> } }, canvasId: string): Promise<void> {
+  try {
+    await client.canvases.edit({
+      canvas_id: canvasId,
+      changes: [
+        {
+          operation: "rename",
+          title_content: { type: "markdown", markdown: CANVAS_TAB_TITLE },
+        },
+      ],
+    });
+  } catch {
+    // Older canvases or API quirks: leaderboard body still updates.
+  }
 }
 
 export async function ensureLeaderboardCanvas(params: {
@@ -78,7 +102,6 @@ export async function ensureLeaderboardCanvas(params: {
   try {
     created = await client.canvases.create({
       channel_id: config.slack.channelId,
-      title,
       document_content: { type: "markdown", markdown },
     });
   } catch (err: unknown) {
@@ -92,6 +115,7 @@ export async function ensureLeaderboardCanvas(params: {
   }
   const canvasId = created?.canvas_id ?? created?.id;
   if (!canvasId) throw new Error("The leaderboard canvas refused to appear—check scopes and channel access.");
+  await setCanvasTabTitle(client, canvasId);
   db.setMeta(SLACK_GUILD_ID, "leaderboard_canvas_id", canvasId);
   opsLog("canvas.leaderboard.created", { canvasId, title });
   return canvasId;
@@ -120,6 +144,7 @@ export async function updateLeaderboardCanvas(params: {
       },
     ],
   });
+  await setCanvasTabTitle(client, canvasId);
   opsLog("canvas.leaderboard.updated", {
     canvasId,
     playerCount: players.length,
