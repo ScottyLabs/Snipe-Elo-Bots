@@ -52,7 +52,7 @@ export function adjustUsage(slashCommand: string): string {
 }
 
 export function adjustParseUserFail(): string {
-  return `That user token won't parse. A mention in the usual shape—<@U123>—if you'd be so kind.`;
+  return `That user token won't parse. Use a member mention, a raw member id (U…), or their Slack @handle (workspace username).`;
 }
 
 export function adjustDeltaInvalid(got: string): string {

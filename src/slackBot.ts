@@ -8,11 +8,14 @@ import {
   isProcessableUserMessageEvent,
   normalizeCommandText,
   parseMentionedUserIdsFromMessageEvent,
-  parseUserToken,
 } from "./parse";
 import { isCommandBody } from "./slashCommands";
 import { opsLog } from "./opsLog";
-import { escapeSlackLeaderboardName, resolveSlackDisplayNames } from "./slackDisplayNames";
+import {
+  escapeSlackLeaderboardName,
+  resolveSlackDisplayNames,
+  resolveSlackUserTokenToUserId,
+} from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
 import * as L from "./voiceLemuen";
 
@@ -70,13 +73,11 @@ function uniquePreserveOrder<T>(arr: T[]): T[] {
 }
 
 async function resolveUserTokensToIds(args: { client: any; tokens: string[] }): Promise<string[]> {
-  // Basic implementation: only supports Slack mention IDs (<@U...>) or raw IDs (U...).
-  // Username resolution is intentionally omitted for safety/simplicity.
   const ids: string[] = [];
   for (const t of args.tokens) {
-    const parsed = parseUserToken(t);
-    if (!parsed.ok) throw new Error(`unrecognized_user_token:${parsed.reason}`);
-    ids.push(parsed.userId);
+    const id = await resolveSlackUserTokenToUserId(args.client, t);
+    if (!id) throw new Error(`unrecognized_user_token:${t}`);
+    ids.push(id);
   }
   return uniquePreserveOrder(ids);
 }
@@ -328,8 +329,8 @@ export async function startSlackBot(params: {
       textPreview: command.text.slice(0, 200),
     });
     try {
-      const sniperResolve = parseUserToken(sniperToken);
-      if (!sniperResolve.ok) {
+      const sniperId = await resolveSlackUserTokenToUserId(client, sniperToken);
+      if (!sniperId) {
         await respond({
           response_type: "ephemeral",
           text: L.makeupParseSniperFail(),
@@ -347,12 +348,12 @@ export async function startSlackBot(params: {
         channelId: command.channel_id,
         threadTs: rootTs,
         sourceMessageTs: rootTs,
-        sniperId: sniperResolve.userId,
+        sniperId,
         snipedIds,
         reactSource: false,
       });
       await respond({ response_type: "ephemeral", text: L.makeupSuccessEphemeral() });
-      opsLog("command.slash.makeupsnipe.result", { result: "ok", sniperId: sniperResolve.userId, snipedIds });
+      opsLog("command.slash.makeupsnipe.result", { result: "ok", sniperId, snipedIds });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.makeupsnipe.result", { result: "error", error: msg });
@@ -380,14 +381,15 @@ export async function startSlackBot(params: {
       return;
     }
     const delta = Number(tokens[tokens.length - 1]);
-    const userTok = parseUserToken(tokens.slice(0, -1).join(" "));
+    const userPart = tokens.slice(0, -1).join(" ");
     opsLog("command.slash.adjustelo", {
       userId: command.user_id,
       channelId: command.channel_id,
       textPreview: command.text.slice(0, 200),
     });
     try {
-      if (!userTok.ok) {
+      const targetUserId = await resolveSlackUserTokenToUserId(client, userPart);
+      if (!targetUserId) {
         await respond({
           response_type: "ephemeral",
           text: L.adjustParseUserFail(),
@@ -403,7 +405,7 @@ export async function startSlackBot(params: {
       }
       const change = params.db.adjustPlayerRating({
         guildId: SLACK_GUILD_ID,
-        playerId: userTok.userId,
+        playerId: targetUserId,
         delta,
       });
       const canvasId = await ensureCanvasOnce();
@@ -418,7 +420,7 @@ export async function startSlackBot(params: {
         }),
       });
       await respond({ response_type: "ephemeral", text: L.adjustSuccessEphemeral() });
-      opsLog("command.slash.adjustelo.result", { result: "ok", targetUserId: userTok.userId, delta });
+      opsLog("command.slash.adjustelo.result", { result: "ok", targetUserId, delta });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.adjustelo.result", { result: "error", error: msg });
@@ -524,8 +526,8 @@ export async function startSlackBot(params: {
           const snipedTokens = parts.slice(2);
           opsLog("command.text.makeupsnipe", { userId, channelId, textPreview: text.slice(0, 200) });
           try {
-            const sniperResolve = parseUserToken(sniperToken);
-            if (!sniperResolve.ok) {
+            const sniperId = await resolveSlackUserTokenToUserId(client, sniperToken);
+            if (!sniperId) {
               await postEphemeral(L.makeupParseSniperFail());
               return;
             }
@@ -540,12 +542,12 @@ export async function startSlackBot(params: {
               channelId,
               threadTs: rootTs,
               sourceMessageTs: rootTs,
-              sniperId: sniperResolve.userId,
+              sniperId,
               snipedIds,
               reactSource: false,
             });
             await postEphemeral(L.makeupSuccessEphemeral());
-            opsLog("command.text.makeupsnipe.result", { result: "ok", sniperId: sniperResolve.userId, snipedIds });
+            opsLog("command.text.makeupsnipe.result", { result: "ok", sniperId, snipedIds });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
             opsLog("command.text.makeupsnipe.result", { result: "error", error: msg });
@@ -567,10 +569,11 @@ export async function startSlackBot(params: {
             return;
           }
           const delta = Number(argTokens[argTokens.length - 1]);
-          const userTok = parseUserToken(argTokens.slice(0, -1).join(" "));
+          const userPart = argTokens.slice(0, -1).join(" ");
           opsLog("command.text.adjustelo", { userId, channelId, textPreview: text.slice(0, 200) });
           try {
-            if (!userTok.ok) {
+            const targetUserId = await resolveSlackUserTokenToUserId(client, userPart);
+            if (!targetUserId) {
               await postEphemeral(L.adjustParseUserFail());
               return;
             }
@@ -580,7 +583,7 @@ export async function startSlackBot(params: {
             }
             const change = params.db.adjustPlayerRating({
               guildId: SLACK_GUILD_ID,
-              playerId: userTok.userId,
+              playerId: targetUserId,
               delta,
             });
             const canvasId = await ensureCanvasOnce();
@@ -595,7 +598,7 @@ export async function startSlackBot(params: {
               }),
             });
             await postEphemeral(L.adjustSuccessEphemeral());
-            opsLog("command.text.adjustelo.result", { result: "ok", targetUserId: userTok.userId, delta });
+            opsLog("command.text.adjustelo.result", { result: "ok", targetUserId, delta });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
             opsLog("command.text.adjustelo.result", { result: "error", error: msg });

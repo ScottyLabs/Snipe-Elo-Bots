@@ -23,16 +23,12 @@ async function ensureBotInChannel(client: { conversations: { join: (a: { channel
 export function renderLeaderboardMarkdown(players: PlayerRating[], displayNames: Map<string, string>): string {
   const rows = players.slice(0, config.leaderboard.topN);
 
-  const header = `# ${config.leaderboard.title}\n`;
+  // Canvas `title` is set on create—do not repeat as `# …` here or Slack shows two headings with a large gap.
   if (rows.length === 0) {
-    return `${header}\n_No ratings yet._`;
+    return "_No ratings yet._";
   }
 
-  const lines: string[] = [];
-  lines.push(header.trimEnd());
-  lines.push("");
-  lines.push("| Rank | Player | ELO |");
-  lines.push("|---:|---|---:|");
+  const lines: string[] = ["| Rank | Player | ELO |", "|---:|---|---:|"];
 
   for (let i = 0; i < rows.length; i++) {
     const p = rows[i];

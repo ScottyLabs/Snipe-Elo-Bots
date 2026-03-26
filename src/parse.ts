@@ -59,10 +59,10 @@ export function parseUserToken(token: string): { ok: true; userId: string } | { 
     return { ok: true, userId: cleaned };
   }
 
-  // @username form (we will resolve later with a user list map)
-  const atUsername = cleaned.match(/^@([a-zA-Z0-9_.-]+)$/);
-  if (atUsername) {
-    return { ok: false, reason: `username:${atUsername[1]}` };
+  // Legacy Slack username / handle: slash args are often literal "@lying2" → cleaned "lying2" (leading @ stripped above).
+  const handleMatch = cleaned.match(/^@?([a-zA-Z0-9][a-zA-Z0-9._-]*)$/);
+  if (handleMatch && !/^\d+$/.test(handleMatch[1])) {
+    return { ok: false, reason: `username:${handleMatch[1].toLowerCase()}` };
   }
 
   return { ok: false, reason: "unrecognized_token" };
