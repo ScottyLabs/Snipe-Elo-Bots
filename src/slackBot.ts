@@ -25,7 +25,8 @@ import {
   takeTopSlackHumanLeaderboard,
 } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
-import { collectIdsFromDirectedPairs, formatHeadToHeadSlack } from "./headToHead";
+import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
+import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatSlackSnipesList } from "./snipeHistory";
 import * as L from "./voiceLemuen";
 
@@ -337,14 +338,28 @@ export async function startSlackBot(params: {
     try {
       const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
       const h2hIds = collectIdsFromDirectedPairs(rows);
+      if (h2hIds.length === 0) {
+        await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
+        return;
+      }
       const h2hNames = await resolveSlackDisplayNames(client, h2hIds);
       const h2hNameOf = (id: string) => escapeSlackLeaderboardName(h2hNames.get(id) ?? id);
-      const body = formatHeadToHeadSlack(rows, h2hNameOf);
-      const parts = chunkSlackText(body);
-      await respond({ response_type: "in_channel", text: parts[0] ?? "(empty)" });
-      for (let i = 1; i < parts.length; i++) {
-        await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
+      const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOf });
+      if (!png) {
+        await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
+        return;
       }
+      await client.files.upload({
+        channels: command.channel_id,
+        file: png,
+        filename: "head-to-head.png",
+        title: "Head-to-head",
+        initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
+      });
+      await respond({
+        response_type: "ephemeral",
+        text: "Posted the head-to-head matrix to the channel.",
+      });
       opsLog("command.slash.headtohead", { userId: command.user_id });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -691,13 +706,45 @@ export async function startSlackBot(params: {
           try {
             const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
             const h2hIdsText = collectIdsFromDirectedPairs(rows);
+            if (h2hIdsText.length === 0) {
+              await client.chat.postMessage({
+                channel: channelId,
+                ...(threadTs ? { thread_ts: threadTs } : {}),
+                text: HEADTOHEAD_EMPTY,
+              });
+              opsLog("command.text.headtohead", { userId, channelId });
+              return;
+            }
             const h2hNamesText = await resolveSlackDisplayNames(client, h2hIdsText);
             const h2hNameOfText = (id: string) => escapeSlackLeaderboardName(h2hNamesText.get(id) ?? id);
-            const body = formatHeadToHeadSlack(rows, h2hNameOfText);
-            const chunks = chunkSlackText(body);
-            for (let i = 0; i < chunks.length; i++) {
-              await client.chat.postMessage({ channel: channelId, thread_ts: ts, text: chunks[i] });
+            const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOfText });
+            if (!png) {
+              await client.chat.postMessage({
+                channel: channelId,
+                ...(threadTs ? { thread_ts: threadTs } : {}),
+                text: HEADTOHEAD_EMPTY,
+              });
+              return;
             }
+            if (threadTs) {
+              await client.files.upload({
+                channels: channelId,
+                file: png,
+                filename: "head-to-head.png",
+                title: "Head-to-head",
+                initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
+                thread_ts: threadTs,
+              });
+            } else {
+              await client.files.upload({
+                channels: channelId,
+                file: png,
+                filename: "head-to-head.png",
+                title: "Head-to-head",
+                initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
+              });
+            }
+            await postEphemeral("Posted the head-to-head matrix.");
             opsLog("command.text.headtohead", { userId, channelId });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);

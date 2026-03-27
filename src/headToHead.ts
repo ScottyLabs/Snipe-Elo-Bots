@@ -1,7 +1,10 @@
 import type { DirectedSnipePairCount } from "./db";
 
-const EMPTY =
+/** Slack posts this as text when there is no matrix to draw; Discord uses markdown table path. */
+export const HEADTOHEAD_EMPTY =
   "_No head-to-head yet—nothing still standing on the ledger, or the field’s still empty._";
+
+const EMPTY = HEADTOHEAD_EMPTY;
 
 type PairAgg = { a: string; b: string; ab: number; ba: number };
 
@@ -73,17 +76,5 @@ export function formatHeadToHeadDiscord(rows: DirectedSnipePairCount[], nameOf: 
     nameOf,
     (n) => `**${n}**`,
     "**Head-to-head**"
-  );
-}
-
-export function formatHeadToHeadSlack(rows: DirectedSnipePairCount[], nameOf: (id: string) => string): string {
-  const pairs = aggregateUnorderedPairs(rows);
-  if (pairs.length === 0) return EMPTY;
-
-  return formatHeadToHeadTable(
-    pairs,
-    nameOf,
-    (n) => `*${n}*`,
-    "*Head-to-head*"
   );
 }

@@ -65,6 +65,7 @@
         "chat:write",
         "reactions:write",
         "users:read",
+        "files:write",
         "canvases:read",
         "canvases:write"
       ]

@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/ScottyLabs/Snipe-Elo-Bots#readme",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.97",
     "@slack/bolt": "^4.6.0",
     "better-sqlite3": "^12.8.0",
     "discord.js": "^14.25.1",

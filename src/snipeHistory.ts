@@ -13,8 +13,11 @@ export function parseSnipedIdsFromEvent(row: SnipeEventRow): string[] {
   }
 }
 
+const DISPLAY_TZ = "America/New_York";
+
 export function formatSnipeHistoryTimestamp(createdAt: number): string {
-  return new Date(createdAt).toLocaleString(undefined, {
+  return new Date(createdAt).toLocaleString("en-US", {
+    timeZone: DISPLAY_TZ,
     dateStyle: "medium",
     timeStyle: "short",
   });

@@ -78,11 +78,13 @@ At minimum, your Slack app needs scopes to:
 - add reactions (:dart:)
 - read users (optional for display names; this basic implementation uses user IDs)
 - manage canvases (`canvases:read`, `canvases:write`) so it can create/update the leaderboard canvas
+- upload files (`files:write`) so `/headtohead` can post the matrix image
 
 The exact scopes depend on your Slack app type, but the bot uses:
 
 - `chat.postMessage`
 - `reactions.add`
+- `files.upload` (head-to-head PNG)
 - `canvases.list`, `canvases.create`, `canvases.edit`
 
 ## How “snipes” work
