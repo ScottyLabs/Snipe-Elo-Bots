@@ -84,7 +84,7 @@ The exact scopes depend on your Slack app type, but the bot uses:
 
 - `chat.postMessage`
 - `reactions.add`
-- `files.upload` (head-to-head PNG)
+- `files.uploadV2` (head-to-head PNG; replaces deprecated `files.upload`)
 - `canvases.list`, `canvases.create`, `canvases.edit`
 
 ## How “snipes” work

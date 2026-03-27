@@ -47,6 +47,33 @@ function chunkSlackText(text: string, maxLen = 3500): string[] {
   return chunks;
 }
 
+const HEADTOHEAD_SLACK_FILE_COMMENT =
+  "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._";
+
+/** Uses `files.uploadV2` (legacy `files.upload` is deprecated for new Slack apps). */
+async function uploadHeadToHeadMatrixPng(client: any, args: { channelId: string; threadTs?: string; png: Buffer }): Promise<void> {
+  await client.files.uploadV2({
+    channel_id: args.channelId,
+    ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+    file: args.png,
+    filename: "head-to-head.png",
+    title: "Head-to-head",
+    initial_comment: HEADTOHEAD_SLACK_FILE_COMMENT,
+  });
+}
+
+/** Head-to-head uploads need `files:write`; legacy `files.upload` also returns `method_deprecated`. */
+function slackHeadtoheadUploadErrorMessage(msg: string): string {
+  const base = L.headtoheadFailed(msg);
+  if (msg.includes("missing_scope")) {
+    return `${base} Add bot scope \`files:write\` (OAuth & Permissions), then reinstall the app to the workspace.`;
+  }
+  if (msg.includes("method_deprecated")) {
+    return `${base} This bot must use \`files.uploadV2\` (deploy the latest code).`;
+  }
+  return base;
+}
+
 async function formatSlackLeaderboardText(
   client: { users: { info: (a: { user: string }) => Promise<unknown> } },
   db: EloDb
@@ -349,13 +376,7 @@ export async function startSlackBot(params: {
         await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
         return;
       }
-      await client.files.upload({
-        channels: command.channel_id,
-        file: png,
-        filename: "head-to-head.png",
-        title: "Head-to-head",
-        initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
-      });
+      await uploadHeadToHeadMatrixPng(client, { channelId: command.channel_id, png });
       await respond({
         response_type: "ephemeral",
         text: "Posted the head-to-head matrix to the channel.",
@@ -363,7 +384,7 @@ export async function startSlackBot(params: {
       opsLog("command.slash.headtohead", { userId: command.user_id });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      await respond({ response_type: "ephemeral", text: L.headtoheadFailed(msg) });
+      await respond({ response_type: "ephemeral", text: slackHeadtoheadUploadErrorMessage(msg) });
     }
   };
 
@@ -726,29 +747,16 @@ export async function startSlackBot(params: {
               });
               return;
             }
-            if (threadTs) {
-              await client.files.upload({
-                channels: channelId,
-                file: png,
-                filename: "head-to-head.png",
-                title: "Head-to-head",
-                initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
-                thread_ts: threadTs,
-              });
-            } else {
-              await client.files.upload({
-                channels: channelId,
-                file: png,
-                filename: "head-to-head.png",
-                title: "Head-to-head",
-                initial_comment: "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._",
-              });
-            }
+            await uploadHeadToHeadMatrixPng(client, {
+              channelId,
+              ...(threadTs ? { threadTs } : {}),
+              png,
+            });
             await postEphemeral("Posted the head-to-head matrix.");
             opsLog("command.text.headtohead", { userId, channelId });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
-            await postEphemeral(L.headtoheadFailed(msg));
+            await postEphemeral(slackHeadtoheadUploadErrorMessage(msg));
           }
           return;
         }

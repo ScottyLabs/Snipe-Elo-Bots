@@ -1,10 +1,8 @@
 import type { DirectedSnipePairCount } from "./db";
 
-/** Slack posts this as text when there is no matrix to draw; Discord uses markdown table path. */
+/** Shown when there is no head-to-head data (Slack text / Discord embed description). */
 export const HEADTOHEAD_EMPTY =
   "_No head-to-head yet—nothing still standing on the ledger, or the field’s still empty._";
-
-const EMPTY = HEADTOHEAD_EMPTY;
 
 type PairAgg = { a: string; b: string; ab: number; ba: number };
 
@@ -51,30 +49,24 @@ function escapeTableCell(s: string): string {
   return s.replace(/\|/g, "·").replace(/\n/g, " ").trim() || "—";
 }
 
-function formatHeadToHeadTable(
-  pairs: PairAgg[],
-  nameOf: (id: string) => string,
-  fmtCount: (n: number) => string,
-  titleLine: string
-): string {
+function pairwiseMarkdownTable(pairs: PairAgg[], nameOf: (id: string) => string): string {
   const header = "| Player A | Player B | A → B | B → A |";
   const sep = "| :--- | :--- | ---: | ---: |";
   const body = pairs.map((p) => {
     const na = escapeTableCell(nameOf(p.a));
     const nb = escapeTableCell(nameOf(p.b));
-    return `| ${na} | ${nb} | ${fmtCount(p.ab)} | ${fmtCount(p.ba)} |`;
+    return `| ${na} | ${nb} | **${p.ab}** | **${p.ba}** |`;
   });
-  return [titleLine, "_Snipes still on the books (undone rounds removed)._", "", header, sep, ...body].join("\n");
+  return [header, sep, ...body].join("\n");
 }
 
-export function formatHeadToHeadDiscord(rows: DirectedSnipePairCount[], nameOf: (id: string) => string): string {
+/** Body for Discord embed `setDescription` (title is set on the embed). Returns `null` when there is no data. */
+export function formatHeadToHeadDiscordEmbedDescription(
+  rows: DirectedSnipePairCount[],
+  nameOf: (id: string) => string
+): string | null {
   const pairs = aggregateUnorderedPairs(rows);
-  if (pairs.length === 0) return EMPTY;
+  if (pairs.length === 0) return null;
 
-  return formatHeadToHeadTable(
-    pairs,
-    nameOf,
-    (n) => `**${n}**`,
-    "**Head-to-head**"
-  );
+  return ["_Snipes still on the books (undone rounds removed)._", "", pairwiseMarkdownTable(pairs, nameOf)].join("\n");
 }

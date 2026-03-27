@@ -1,5 +1,6 @@
 import {
   Client,
+  EmbedBuilder,
   Events,
   GatewayIntentBits,
   PermissionFlagsBits,
@@ -27,11 +28,16 @@ import {
   takeTopDiscordHumanLeaderboard,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
-import { collectIdsFromDirectedPairs, formatHeadToHeadDiscord } from "../headToHead";
+import {
+  collectIdsFromDirectedPairs,
+  formatHeadToHeadDiscordEmbedDescription,
+  HEADTOHEAD_EMPTY,
+} from "../headToHead";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
 
 const DART = "🎯";
 const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
+const HEADTOHEAD_EMBED_COLOR = 0x5865f2;
 
 function getGuildSnipeChannelId(db: EloDb, guildId: string): string | null {
   return db.getMeta(guildId, SNIPE_CHANNEL_META_KEY) ?? discordConfig.guildSnipeChannels.get(guildId) ?? null;
@@ -311,11 +317,35 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         const h2hIds = collectIdsFromDirectedPairs(rows);
         const h2hNames = await resolveDiscordDisplayNames(interaction.guild, h2hIds);
         const h2hNameOf = (id: string) => escapeDiscordMarkdownChunk(h2hNames.get(id) ?? id);
-        const text = formatHeadToHeadDiscord(rows, h2hNameOf);
-        const parts = chunkLines(text.split("\n"), 1950);
-        await interaction.editReply({ content: parts[0] ?? "(empty)" });
-        for (let i = 1; i < parts.length; i++) {
-          await interaction.followUp({ content: parts[i] });
+        const description = formatHeadToHeadDiscordEmbedDescription(rows, h2hNameOf);
+        if (description === null) {
+          await interaction.editReply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(HEADTOHEAD_EMBED_COLOR)
+                .setTitle("Head-to-head")
+                .setDescription(HEADTOHEAD_EMPTY),
+            ],
+          });
+        } else {
+          const descChunks = chunkLines(description.split("\n"), 4096);
+          const embeds = descChunks.slice(0, 10).map((chunk, i) =>
+            new EmbedBuilder()
+              .setColor(HEADTOHEAD_EMBED_COLOR)
+              .setTitle(descChunks.length > 1 ? `Head-to-head (${i + 1}/${descChunks.length})` : "Head-to-head")
+              .setDescription(chunk)
+          );
+          await interaction.editReply({ embeds });
+          for (let i = 10; i < descChunks.length; i++) {
+            await interaction.followUp({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(HEADTOHEAD_EMBED_COLOR)
+                  .setTitle(`Head-to-head (${i + 1}/${descChunks.length})`)
+                  .setDescription(descChunks[i]),
+              ],
+            });
+          }
         }
         opsLog("discord.headtohead", { guildId: interaction.guild!.id, userId: interaction.user.id });
       } catch (e) {
