@@ -60,7 +60,23 @@ export function formatDuelChallengeBlocks(params: {
     `• After you *accept*, the clock runs for *${params.durationLabel}*.`,
     `• Stake: *${params.betPoints}* ELO — winner takes that much from the loser’s rating; *tie* — no change.`,
     "",
-    `${params.targetMention}: reply in this thread with \`acceptduel\` or \`declineduel\`.`,
+    `${params.targetMention}: reply in this thread with \`acceptduel\` or \`declineduel\`. Challenger may \`cancelduel\`.`,
+  ].join("\n");
+}
+
+/** Discord markdown (bold **, italic _). */
+export function formatDuelChallengeBlocksDiscord(params: {
+  challengerMention: string;
+  targetMention: string;
+  durationLabel: string;
+  betPoints: number;
+}): string {
+  return [
+    `**Snipe duel** — ${params.challengerMention} challenges ${params.targetMention}.`,
+    `• After you **accept**, the clock runs for **${params.durationLabel}**.`,
+    `• Stake: **${params.betPoints}** ELO — winner takes that much from the loser’s rating; **tie** — no change.`,
+    "",
+    `${params.targetMention}: reply in this thread with \`acceptduel\` or \`declineduel\`. Challenger may \`cancelduel\`.`,
   ].join("\n");
 }
 
@@ -84,6 +100,28 @@ export function formatDuelLiveScoreLineShort(params: {
   const endStr = endDate.toISOString().replace("T", " ").slice(0, 16) + " UTC";
   return (
     `*Duel:* ${nameOf(a)}→${nameOf(b)} *${aToB}* · ${nameOf(b)}→${nameOf(a)} *${bToA}* · ends _${endStr}_`
+  );
+}
+
+export function formatDuelLiveScoreLineShortDiscord(params: {
+  duel: SnipeDuelRow;
+  nameOf: (id: string) => string;
+  db: EloDb;
+  guildId: string;
+  nowMs: number;
+}): string {
+  const { duel, nameOf, db, guildId, nowMs } = params;
+  const a = duel.challengerId;
+  const b = duel.targetId;
+  const since = duel.acceptedAt ?? 0;
+  const until = duel.endsAt ?? nowMs;
+  const end = Math.min(nowMs, until);
+  const aToB = db.countDirectedSnipesInWindow(guildId, a, b, since, end);
+  const bToA = db.countDirectedSnipesInWindow(guildId, b, a, since, end);
+  const endDate = new Date(until);
+  const endStr = endDate.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  return (
+    `**Duel:** ${nameOf(a)}→${nameOf(b)} **${aToB}** · ${nameOf(b)}→${nameOf(a)} **${bToA}** · ends _${endStr}_`
   );
 }
 
@@ -133,5 +171,34 @@ export function formatDuelSettlementMessage(params: {
   return (
     `*Snipe duel resolved* — ${nameOf(winnerId)} wins (${na}→${nb} *${aToB}*, ${nb}→${na} *${bToA}*). ` +
     `*${duel.betPoints}* ELO: ${nameOf(loserId)} → ${nameOf(winnerId)}.`
+  );
+}
+
+export function formatDuelSettlementMessageDiscord(params: {
+  duel: SnipeDuelRow;
+  nameOf: (id: string) => string;
+  db: EloDb;
+  guildId: string;
+}): string {
+  const { duel, nameOf, db, guildId } = params;
+  const a = duel.challengerId;
+  const b = duel.targetId;
+  const since = duel.acceptedAt ?? 0;
+  const until = duel.endsAt ?? Date.now();
+  const aToB = db.countDirectedSnipesInWindow(guildId, a, b, since, until);
+  const bToA = db.countDirectedSnipesInWindow(guildId, b, a, since, until);
+  const na = nameOf(a);
+  const nb = nameOf(b);
+  if (aToB === bToA) {
+    return (
+      `**Snipe duel ended — tie** (${na} vs ${nb}: ${aToB} landing each way). ` +
+      `Stake **${duel.betPoints}** ELO stays put.`
+    );
+  }
+  const winnerId = aToB > bToA ? a : b;
+  const loserId = winnerId === a ? b : a;
+  return (
+    `**Snipe duel resolved** — ${nameOf(winnerId)} wins (${na}→${nb} **${aToB}**, ${nb}→${na} **${bToA}**). ` +
+    `**${duel.betPoints}** ELO: ${nameOf(loserId)} → ${nameOf(winnerId)}.`
   );
 }

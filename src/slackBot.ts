@@ -121,7 +121,7 @@ function formatSlackHelpText(): string {
     "",
     "*Duels*",
     `• \`${c.slashSnipeDuel}\` <@opponent> <duration> <bet> — e.g. \`${c.slashSnipeDuel} @user 7d 50\`.`,
-    "• In the challenge thread, target replies with `acceptduel` or `declineduel`.",
+    "• In the challenge thread, target replies with `acceptduel` or `declineduel`; challenger may `cancelduel`.",
     "• During the window, only snipes between those two count; winner takes the bet from loser, tie moves no points.",
     "",
     "*Implicit snipe rule*",
@@ -813,46 +813,67 @@ export async function startSlackBot(params: {
         return;
       }
 
-      // Duel accept / decline in the challenge thread (plain text; always on).
+      // Duel accept / decline / cancel in the challenge thread (plain text; always on).
       if (threadTs && text) {
         const duel = params.db.getSnipeDuelByRootMessageTs(SLACK_GUILD_ID, threadTs);
         if (duel && duel.status === "pending") {
-          if (userId !== duel.targetId) {
-            await postEphemeral(L.duelReplyNotTarget());
-            return;
-          }
-          if (isCommandBody(lower, "acceptduel")) {
-            try {
-              const acceptedAt = Date.now();
-              const endsAt = acceptedAt + duel.durationMs;
-              params.db.acceptSnipeDuel(duel.duelId, SLACK_GUILD_ID, acceptedAt, endsAt);
-              const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
-              await client.chat.postMessage({
-                channel: channelId,
-                thread_ts: threadTs,
-                text: L.duelAcceptedPublic(`window closes _${endStr}_`),
-              });
-              opsLog("command.text.duel.accept", { duelId: duel.duelId, userId });
-            } catch (e: unknown) {
-              const msg = e instanceof Error ? e.message : String(e);
-              await postEphemeral(L.snipeDuelFailed(msg));
+          if (isCommandBody(lower, "cancelduel")) {
+            if (userId !== duel.challengerId) {
+              await postEphemeral(L.duelCancelNotChallenger());
+              return;
             }
-            return;
-          }
-          if (isCommandBody(lower, "declineduel")) {
             try {
               params.db.declineSnipeDuel(duel.duelId, SLACK_GUILD_ID);
               await client.chat.postMessage({
                 channel: channelId,
                 thread_ts: threadTs,
-                text: L.duelDeclinedPublic(),
+                text: L.duelCancelledByChallengerPublic(),
               });
-              opsLog("command.text.duel.decline", { duelId: duel.duelId, userId });
+              opsLog("command.text.duel.cancel", { duelId: duel.duelId, userId });
             } catch (e: unknown) {
               const msg = e instanceof Error ? e.message : String(e);
               await postEphemeral(L.snipeDuelFailed(msg));
             }
             return;
+          }
+          if (isCommandBody(lower, "acceptduel") || isCommandBody(lower, "declineduel")) {
+            if (userId !== duel.targetId) {
+              await postEphemeral(L.duelReplyNotTarget());
+              return;
+            }
+            if (isCommandBody(lower, "acceptduel")) {
+              try {
+                const acceptedAt = Date.now();
+                const endsAt = acceptedAt + duel.durationMs;
+                params.db.acceptSnipeDuel(duel.duelId, SLACK_GUILD_ID, acceptedAt, endsAt);
+                const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+                await client.chat.postMessage({
+                  channel: channelId,
+                  thread_ts: threadTs,
+                  text: L.duelAcceptedPublic(`window closes _${endStr}_`),
+                });
+                opsLog("command.text.duel.accept", { duelId: duel.duelId, userId });
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                await postEphemeral(L.snipeDuelFailed(msg));
+              }
+              return;
+            }
+            if (isCommandBody(lower, "declineduel")) {
+              try {
+                params.db.declineSnipeDuel(duel.duelId, SLACK_GUILD_ID);
+                await client.chat.postMessage({
+                  channel: channelId,
+                  thread_ts: threadTs,
+                  text: L.duelDeclinedPublic(),
+                });
+                opsLog("command.text.duel.decline", { duelId: duel.duelId, userId });
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                await postEphemeral(L.snipeDuelFailed(msg));
+              }
+              return;
+            }
           }
         }
       }

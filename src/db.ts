@@ -929,6 +929,20 @@ export class EloDb {
     return rows.map(mapSnipeDuelRow);
   }
 
+  /** All guilds (e.g. Discord snowflakes); excludes nothing—callers filter Slack vs Discord. */
+  listAllSnipeDuelsDueForSettlement(nowMs: number): SnipeDuelRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM snipe_duels
+         WHERE status = 'active'
+           AND ends_at IS NOT NULL
+           AND ends_at <= ?
+         ORDER BY ends_at ASC`
+      )
+      .all(nowMs) as Record<string, unknown>[];
+    return rows.map(mapSnipeDuelRow);
+  }
+
   acceptSnipeDuel(duelId: string, guildId: string, acceptedAt: number, endsAt: number): void {
     const r = this.db
       .prepare(

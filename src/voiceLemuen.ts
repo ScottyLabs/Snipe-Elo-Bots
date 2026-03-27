@@ -122,7 +122,7 @@ export function snipeDuelTargetBot(): string {
 }
 
 export function snipeDuelPostedEphemeral(): string {
-  return `Challenge posted. They can accept or decline in the thread.`;
+  return `Challenge posted. They can accept or decline in the thread; you can \`cancelduel\` there if you change your mind.`;
 }
 
 export function snipeDuelFailed(error: string): string {
@@ -139,6 +139,15 @@ export function duelAcceptedPublic(endsSummary: string): string {
 
 export function duelDeclinedPublic(): string {
   return `Declined. No stake, no score—consider the challenge withdrawn.`;
+}
+
+export function duelCancelledByChallengerPublic(): string {
+  return `Withdrawn—the challenger called it off before anyone accepted.`;
+}
+
+/** Non-initiator typed cancelduel (includes challenged party—use declineduel). */
+export function duelCancelNotChallenger(): string {
+  return `Only the challenger may withdraw; if you were challenged, use \`declineduel\` instead.`;
 }
 
 export function leaderboardEmptyFallback(): string {
@@ -207,4 +216,5 @@ export const discordSlashDescriptions = {
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
   headtohead: "Pairwise snipe counts for everyone still on the books.",
+  snipeduel: "Challenge someone to a timed snipe duel with an ELO stake.",
 } as const;

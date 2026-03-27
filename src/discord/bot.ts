@@ -8,6 +8,7 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  ThreadAutoArchiveDuration,
   type ChatInputCommandInteraction,
   type Guild,
   type Message,
@@ -32,6 +33,16 @@ import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
 import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
+import { SLACK_GUILD_ID } from "../tenants";
+import { isCommandBody } from "../slashCommands";
+import {
+  collectActiveDuelsForSnipe,
+  formatDuelChallengeBlocksDiscord,
+  formatDuelLiveScoreLineShortDiscord,
+  formatDuelSettlementMessageDiscord,
+  formatDurationLabel,
+  parseDurationToMs,
+} from "../snipeDuel";
 
 const DART = "🎯";
 const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
@@ -68,6 +79,19 @@ async function discordHumanSnipedIds(
     humanSniped.push(id);
   }
   return { humanSniped, mentionedSomeoneBesideSniper: candidates.length > 0 };
+}
+
+/** Thread starter or reply-to-message id for a duel challenge posted in the snipe lane. */
+async function resolveDuelRootMessageId(message: Message, snipeChannelId: string): Promise<string | null> {
+  if (message.channel.isThread()) {
+    if (message.channel.parentId !== snipeChannelId) return null;
+    const starter = await message.channel.fetchStarterMessage().catch(() => null);
+    return starter?.id ?? null;
+  }
+  if (message.channelId === snipeChannelId && message.reference?.messageId) {
+    return message.reference.messageId;
+  }
+  return null;
 }
 
 function chunkLines(lines: string[], maxLen = 1900): string[] {
@@ -120,6 +144,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "",
     "**Scoring / moderation**",
     "• `/makeupsnipe <sniper> <sniped...>` — log a snipe that missed camera.",
+    "• `/snipeduel <opponent> <duration> <bet>` — challenge a timed duel (e.g. `7d` stake `50`). Target: `acceptduel` / `declineduel`; challenger: `cancelduel` in the thread.",
     "• `/removesnipe <confirmation_id>` — undo one recorded snipe.",
     "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
     "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
@@ -196,12 +221,36 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     const names = await resolveDiscordDisplayNames(args.guild, ids);
     const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
 
+    const nowMs = Date.now();
+    const activeDuels = collectActiveDuelsForSnipe(
+      db,
+      args.guild.id,
+      args.sniperId,
+      args.snipedIds,
+      nowMs
+    );
+    const duelAppend =
+      activeDuels.length > 0
+        ? activeDuels
+            .map((d) =>
+              formatDuelLiveScoreLineShortDiscord({
+                duel: d,
+                nameOf,
+                db,
+                guildId: args.guild.id,
+                nowMs,
+              })
+            )
+            .join("\n")
+        : undefined;
+
     const text = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
       pairMatches: result.pairMatches,
       playerChanges: result.playerChanges,
       nameOf,
+      duelAppend,
     });
 
     const reply = await args.replyFn(text);
@@ -269,6 +318,24 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
             .setRequired(true)
         ),
       new SlashCommandBuilder()
+        .setName("snipeduel")
+        .setDescription(L.discordSlashDescriptions.snipeduel)
+        .addUserOption((o) => o.setName("opponent").setDescription("Who you’re challenging").setRequired(true))
+        .addStringOption((o) =>
+          o
+            .setName("duration")
+            .setDescription("Window after accept: 30m, 4h, 7d, 1w")
+            .setRequired(true)
+        )
+        .addIntegerOption((o) =>
+          o
+            .setName("bet")
+            .setDescription("ELO stake (whole number)")
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(10_000)
+        ),
+      new SlashCommandBuilder()
         .setName("adjustelo")
         .setDescription(L.discordSlashDescriptions.adjustelo)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -301,6 +368,58 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     } catch (e) {
       console.error("[snipe-elo-discord] Failed to register slash commands:", e);
     }
+
+    const settleDueDiscordSnipeDuels = async () => {
+      const due = db.listAllSnipeDuelsDueForSettlement(Date.now());
+      for (const duel of due) {
+        if (duel.guildId === SLACK_GUILD_ID) continue;
+        try {
+          const guild = await c.guilds.fetch(duel.guildId).catch(() => null);
+          if (!guild) continue;
+          const a = duel.challengerId;
+          const b = duel.targetId;
+          const since = duel.acceptedAt ?? 0;
+          const until = duel.endsAt ?? Date.now();
+          const aToB = db.countDirectedSnipesInWindow(duel.guildId, a, b, since, until);
+          const bToA = db.countDirectedSnipesInWindow(duel.guildId, b, a, since, until);
+          const now = Date.now();
+          const names = await resolveDiscordDisplayNames(guild, [a, b]);
+          const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
+
+          if (aToB === bToA) {
+            db.settleSnipeDuel(duel.duelId, duel.guildId, null, now);
+          } else {
+            const winnerId = aToB > bToA ? a : b;
+            const loserId = aToB > bToA ? b : a;
+            db.adjustPlayerRating({ guildId: duel.guildId, playerId: winnerId, delta: duel.betPoints });
+            db.adjustPlayerRating({ guildId: duel.guildId, playerId: loserId, delta: -duel.betPoints });
+            db.settleSnipeDuel(duel.duelId, duel.guildId, winnerId, now);
+          }
+
+          const text = formatDuelSettlementMessageDiscord({ duel, nameOf, db, guildId: duel.guildId });
+          const channel = await guild.channels.fetch(duel.channelId).catch(() => null);
+          if (channel?.isTextBased()) {
+            await channel.send({ content: text });
+          }
+          opsLog("discord.duel.settled", {
+            duelId: duel.duelId,
+            guildId: duel.guildId,
+            tie: aToB === bToA,
+            aToB,
+            bToA,
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[snipe-elo-discord] duel settle failed ${duel.duelId}: ${msg}`);
+          opsLog("discord.duel.settle_failed", { duelId: duel.duelId, error: msg });
+        }
+      }
+    };
+
+    setInterval(() => {
+      void settleDueDiscordSnipeDuels();
+    }, 60_000);
+    void settleDueDiscordSnipeDuels();
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
@@ -490,6 +609,80 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       return;
     }
 
+    if (interaction.commandName === "snipeduel") {
+      const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
+      if (!expectedCh || interaction.channelId !== expectedCh) {
+        await interaction.reply({
+          content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const ch = interaction.channel;
+      if (!ch?.isTextBased() || ch.isDMBased()) {
+        await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+
+      const opponent = interaction.options.getUser("opponent", true);
+      const durationRaw = interaction.options.getString("duration", true);
+      const bet = interaction.options.getInteger("bet", true);
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const durationMs = parseDurationToMs(durationRaw);
+      if (durationMs === null) {
+        await interaction.editReply({ content: L.snipeDuelDurationInvalid() });
+        return;
+      }
+      if (opponent.id === interaction.user.id) {
+        await interaction.editReply({ content: L.snipeDuelSelf() });
+        return;
+      }
+      if (opponent.bot) {
+        await interaction.editReply({ content: L.snipeDuelTargetBot() });
+        return;
+      }
+
+      try {
+        const durationLabel = formatDurationLabel(durationMs);
+        const challengerMention = `<@${interaction.user.id}>`;
+        const targetMention = `<@${opponent.id}>`;
+        const body = formatDuelChallengeBlocksDiscord({
+          challengerMention,
+          targetMention,
+          durationLabel,
+          betPoints: bet,
+        });
+        const duelMsg = await ch.send({ content: body });
+        await duelMsg.startThread({
+          name: `Duel — ${interaction.user.username} vs ${opponent.username}`.slice(0, 100),
+          autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
+        });
+        db.insertSnipeDuel({
+          guildId: interaction.guild.id,
+          channelId: interaction.channelId,
+          rootMessageTs: duelMsg.id,
+          challengerId: interaction.user.id,
+          targetId: opponent.id,
+          betPoints: bet,
+          durationMs,
+        });
+        await interaction.editReply({ content: L.snipeDuelPostedEphemeral() });
+        opsLog("discord.snipeduel.posted", {
+          guildId: interaction.guild.id,
+          targetId: opponent.id,
+          bet,
+          durationMs,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: L.snipeDuelFailed(msg) });
+      }
+      return;
+    }
+
     if (interaction.commandName === "setsnipechannel") {
       if (!isDiscordModerator(interaction)) {
         await interaction.reply({ content: L.discordModeratorOnlyCommand(), ephemeral: true });
@@ -557,7 +750,68 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     try {
       if (!message.guild || message.author.bot) return;
       const snipeChannelId = getGuildSnipeChannelId(db, message.guild.id);
-      if (!snipeChannelId || message.channelId !== snipeChannelId) return;
+      if (!snipeChannelId) return;
+
+      const raw = message.content.trim();
+      if (raw) {
+        const duelRootId = await resolveDuelRootMessageId(message, snipeChannelId);
+        if (duelRootId) {
+          const duel = db.getSnipeDuelByRootMessageTs(message.guild.id, duelRootId);
+          if (duel && duel.status === "pending") {
+            const lower = raw.toLowerCase();
+            if (isCommandBody(lower, "cancelduel")) {
+              if (message.author.id !== duel.challengerId) {
+                await message.reply({ content: L.duelCancelNotChallenger() });
+                return;
+              }
+              try {
+                db.declineSnipeDuel(duel.duelId, message.guild.id);
+                await message.reply({ content: L.duelCancelledByChallengerPublic() });
+                opsLog("discord.duel.cancel", { duelId: duel.duelId, userId: message.author.id });
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                await message.reply({ content: L.snipeDuelFailed(msg) });
+              }
+              return;
+            }
+            if (isCommandBody(lower, "acceptduel") || isCommandBody(lower, "declineduel")) {
+              if (message.author.id !== duel.targetId) {
+                await message.reply({ content: L.duelReplyNotTarget() });
+                return;
+              }
+              if (isCommandBody(lower, "acceptduel")) {
+                try {
+                  const acceptedAt = Date.now();
+                  const endsAt = acceptedAt + duel.durationMs;
+                  db.acceptSnipeDuel(duel.duelId, message.guild.id, acceptedAt, endsAt);
+                  const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+                  await message.reply({
+                    content: L.duelAcceptedPublic(`window closes _${endStr}_`),
+                  });
+                  opsLog("discord.duel.accept", { duelId: duel.duelId, userId: message.author.id });
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  await message.reply({ content: L.snipeDuelFailed(msg) });
+                }
+                return;
+              }
+              if (isCommandBody(lower, "declineduel")) {
+                try {
+                  db.declineSnipeDuel(duel.duelId, message.guild.id);
+                  await message.reply({ content: L.duelDeclinedPublic() });
+                  opsLog("discord.duel.decline", { duelId: duel.duelId, userId: message.author.id });
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  await message.reply({ content: L.snipeDuelFailed(msg) });
+                }
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      if (message.channelId !== snipeChannelId) return;
 
       const mentioned = collectMentionedUserIds(message);
       if (mentioned.length === 0) return;
