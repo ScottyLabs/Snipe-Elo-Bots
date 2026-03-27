@@ -1,20 +1,22 @@
 /**
- * User-facing lines in Lemuen's voice (Arknights): cordial, precise, lightly edged.
+ * User-facing lines in Lemuen's voice (Arknights): cordial, precise, lightly edged—
+ * polite requests that still expect compliance; occasional warmth or “~”; paperwork and aim metaphors.
  * @see https://arknights.wiki.gg/wiki/Lemuen/Dialogue
+ * @see https://arknights.wiki.gg/wiki/Lemuen/Story
  */
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `We're not in the right nest for that. Would you mind running this in ${channelRef}? I only keep score there.`;
+  return `We're not in the nest I use for that. Would you mind running it in ${channelRef}? I only keep score from the lane I've mapped.`;
 }
 
 export function serverNotConfigured(): string {
-  return `This place isn't on my chart yet—no snipe lane mapped. Someone with the keys will need to wire that up first.`;
+  return `This place isn't on my chart yet—no snipe lane drawn. Someone with the keys will need to wire that up first.`;
 }
 
 export function removesnipeNeedSlackThread(): string {
   return (
-    `I need the snipe *thread* for this undo. Slack does not run custom slash commands from thread composers—` +
-    `open that thread and send a plain message: \`removesnipe\` (no leading slash). That's the reliable path.`
+    `I need the snipe *thread* for this undo. Slack won't deliver custom slash commands from thread composers—` +
+    `open that thread and send a plain message: \`removesnipe\` (no leading slash). That's the reliable path, if you please.`
   );
 }
 
@@ -23,7 +25,7 @@ export function removesnipeNothingInThread(): string {
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Done. I've left the details in the thread—review them when you have a moment.`;
+  return `Done. I've left the particulars in the thread—review them when you have a moment.`;
 }
 
 export function removesnipeFailed(error: string): string {
@@ -35,7 +37,7 @@ export function makeupUsage(slashCommand: string): string {
 }
 
 export function makeupParseSniperFail(): string {
-  return `I couldn't make sense of the sniper. A proper mention—<@U123>—would help.`;
+  return `I couldn't make sense of the sniper. Could I trouble you for a proper mention—<@U123>, for instance?`;
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
@@ -43,11 +45,11 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Logged. You'll find the full reckoning threaded under that new message.`;
+  return `Logged. You'll find the full reckoning threaded under that new message—kindly look it over when you're free.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
-  return `${slashCommand} didn't cooperate: ${error}`;
+  return `${slashCommand} wouldn't cooperate: ${error}`;
 }
 
 export function adjustUsage(slashCommand: string): string {
@@ -63,7 +65,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `The books are updated and the canvas refreshed. Try to keep things sporting.`;
+  return `The books are updated and the canvas refreshed. Try to keep things sporting—shall we call that settled?`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -83,11 +85,11 @@ export function snipesFailed(error: string): string {
 }
 
 export function headtoheadFailed(error: string): string {
-  return `The tally room’s locked: ${error}`;
+  return `Head-to-head's locked up for the moment: ${error}`;
 }
 
 export function leaderboardEmptyFallback(): string {
-  return "_The board is quiet—no scores yet. That can change in a heartbeat._";
+  return "_The board's quiet—no scores yet. That can change in a heartbeat._";
 }
 
 export function discordInvalidConfirmationId(): string {
@@ -134,7 +136,7 @@ export function adjustTargetIsBot(): string {
 }
 
 export function discordModeratorOnlyCommand(): string {
-  return `That switch is locked to moderators. If you're holding the server keys, try again.`;
+  return `That switch is locked to moderators—if you're holding the server keys, try again.`;
 }
 
 export function discordSnipeChannelSet(channelRef: string): string {
@@ -143,12 +145,12 @@ export function discordSnipeChannelSet(channelRef: string): string {
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
-  leaderboard: "Survey the standings—who's sitting pretty today?",
-  show_leaderboard: "Same as /leaderboard—post the ELO standings here.",
-  removesnipe: "Strike a snipe from the record (bot confirmation message ID).",
-  makeupsnipe: "Log a snipe that missed the camera—paperwork for the diligent.",
+  leaderboard: "Survey the standings—who's ahead today?",
+  show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
+  removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
+  makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
-  snipes: "Last 5 snipes as shooter and last 5 times sniped (optional user; default you).",
-  headtohead: "Head-to-head snipe counts between everyone (still on the books).",
+  snipes: "Last five as shooter, last five times sniped—optional user; default you.",
+  headtohead: "Pairwise snipe counts for everyone still on the books.",
 } as const;

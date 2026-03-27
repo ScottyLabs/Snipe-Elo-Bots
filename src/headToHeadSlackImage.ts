@@ -1,6 +1,22 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { join } from "node:path";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import type { DirectedSnipePairCount } from "./db";
 import { collectIdsFromDirectedPairs } from "./headToHead";
+
+/**
+ * Skia has no bundled sans fonts; Helvetica/Arial are absent on typical Linux hosts (e.g. Railway),
+ * so text would render as empty glyphs. Ship Noto Sans TTFs in `../fonts` and register at runtime.
+ */
+const H2H_FONT = '"Noto Sans"';
+let h2hFontsRegistered = false;
+
+function ensureHeadToHeadCanvasFonts(): void {
+  if (h2hFontsRegistered) return;
+  const dir = join(__dirname, "..", "fonts");
+  GlobalFonts.registerFromPath(join(dir, "NotoSans-Regular.ttf"), "Noto Sans");
+  GlobalFonts.registerFromPath(join(dir, "NotoSans-SemiBold.ttf"), "Noto Sans");
+  h2hFontsRegistered = true;
+}
 
 function truncateLabel(s: string, maxChars: number): string {
   const t = s.replace(/\n/g, " ").trim() || "—";
@@ -18,6 +34,8 @@ export function renderHeadToHeadMatrixPng(params: {
 }): Buffer | null {
   const ids = collectIdsFromDirectedPairs(params.pairRows);
   if (ids.length === 0) return null;
+
+  ensureHeadToHeadCanvasFonts();
 
   const ordered = [...ids].sort((a, b) =>
     params.nameOf(a).localeCompare(params.nameOf(b), "en", { sensitivity: "base" })
@@ -59,12 +77,12 @@ export function renderHeadToHeadMatrixPng(params: {
   ctx.fillRect(0, 0, canvasW, canvasH);
 
   ctx.fillStyle = "#1d1c1d";
-  ctx.font = `600 ${fontSize + 6}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  ctx.font = `600 ${fontSize + 6}px ${H2H_FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Head-to-head", canvasW / 2, padding + fontSize + 8);
 
-  ctx.font = `${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  ctx.font = `${fontSize}px ${H2H_FONT}`;
   ctx.fillStyle = "#616061";
   ctx.fillText("Snipes still on the books (undone rounds removed).", canvasW / 2, padding + fontSize * 2 + 16);
 
@@ -77,11 +95,11 @@ export function renderHeadToHeadMatrixPng(params: {
   ctx.fillRect(gridLeft, gridTop, rowLabelW, headerH);
   ctx.strokeRect(gridLeft, gridTop, rowLabelW, headerH);
   ctx.fillStyle = "#616061";
-  ctx.font = `600 ${fontSize - 1}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  ctx.font = `600 ${fontSize - 1}px ${H2H_FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("Sniper", gridLeft + rowLabelW / 2, gridTop + headerH / 2 - 8);
-  ctx.font = `${fontSize - 2}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  ctx.font = `${fontSize - 2}px ${H2H_FONT}`;
   ctx.fillText("(rows)", gridLeft + rowLabelW / 2, gridTop + headerH / 2 + 10);
 
   for (let j = 0; j < n; j++) {
@@ -90,7 +108,7 @@ export function renderHeadToHeadMatrixPng(params: {
     ctx.fillRect(x, gridTop, cellW, headerH);
     ctx.strokeRect(x, gridTop, cellW, headerH);
     ctx.fillStyle = "#1d1c1d";
-    ctx.font = `${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.font = `${fontSize}px ${H2H_FONT}`;
     ctx.save();
     const cx = x + cellW / 2;
     const cy = gridTop + headerH / 2;
@@ -108,7 +126,7 @@ export function renderHeadToHeadMatrixPng(params: {
     ctx.fillRect(gridLeft, y, rowLabelW, cellH);
     ctx.strokeRect(gridLeft, y, rowLabelW, cellH);
     ctx.fillStyle = "#1d1c1d";
-    ctx.font = `${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.font = `${fontSize}px ${H2H_FONT}`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(labels[i], gridLeft + rowLabelW - 8, y + cellH / 2);
@@ -121,7 +139,7 @@ export function renderHeadToHeadMatrixPng(params: {
       ctx.strokeRect(x, y, cellW, cellH);
       ctx.fillStyle = "#1d1c1d";
       ctx.textAlign = "center";
-      ctx.font = `600 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+      ctx.font = `600 ${fontSize}px ${H2H_FONT}`;
       ctx.fillText(text, x + cellW / 2, y + cellH / 2);
     }
   }
