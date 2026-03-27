@@ -43,34 +43,47 @@ export function collectIdsFromDirectedPairs(rows: DirectedSnipePairCount[]): str
   return [...s];
 }
 
+/** Pipes/newlines in names would break markdown tables. */
+function escapeTableCell(s: string): string {
+  return s.replace(/\|/g, "·").replace(/\n/g, " ").trim() || "—";
+}
+
+function formatHeadToHeadTable(
+  pairs: PairAgg[],
+  nameOf: (id: string) => string,
+  fmtCount: (n: number) => string,
+  titleLine: string
+): string {
+  const header = "| Player A | Player B | A → B | B → A |";
+  const sep = "| :--- | :--- | ---: | ---: |";
+  const body = pairs.map((p) => {
+    const na = escapeTableCell(nameOf(p.a));
+    const nb = escapeTableCell(nameOf(p.b));
+    return `| ${na} | ${nb} | ${fmtCount(p.ab)} | ${fmtCount(p.ba)} |`;
+  });
+  return [titleLine, "_Snipes still on the books (undone rounds removed)._", "", header, sep, ...body].join("\n");
+}
+
 export function formatHeadToHeadDiscord(rows: DirectedSnipePairCount[], nameOf: (id: string) => string): string {
   const pairs = aggregateUnorderedPairs(rows);
   if (pairs.length === 0) return EMPTY;
 
-  const lines = pairs.map(
-    (p) =>
-      `• ${nameOf(p.a)} → ${nameOf(p.b)}: **${p.ab}**× · ${nameOf(p.b)} → ${nameOf(p.a)}: **${p.ba}**×`
+  return formatHeadToHeadTable(
+    pairs,
+    nameOf,
+    (n) => `**${n}**`,
+    "**Head-to-head**"
   );
-  return [
-    "**Head-to-head**",
-    "_Snipes still on the books (undone rounds removed)._",
-    "",
-    ...lines,
-  ].join("\n");
 }
 
 export function formatHeadToHeadSlack(rows: DirectedSnipePairCount[], nameOf: (id: string) => string): string {
   const pairs = aggregateUnorderedPairs(rows);
   if (pairs.length === 0) return EMPTY;
 
-  const lines = pairs.map(
-    (p) =>
-      `• ${nameOf(p.a)} → ${nameOf(p.b)}: *${p.ab}*× · ${nameOf(p.b)} → ${nameOf(p.a)}: *${p.ba}*×`
+  return formatHeadToHeadTable(
+    pairs,
+    nameOf,
+    (n) => `*${n}*`,
+    "*Head-to-head*"
   );
-  return [
-    "*Head-to-head*",
-    "_Snipes still on the books (undone rounds removed)._",
-    "",
-    ...lines,
-  ].join("\n");
 }
