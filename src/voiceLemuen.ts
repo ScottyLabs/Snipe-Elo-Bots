@@ -32,6 +32,19 @@ export function removesnipeFailed(error: string): string {
   return `Please, this is no time for excuses—and undo didn't take: ${error}`;
 }
 
+/** Maps known DB errors to readable copy; keeps raw detail out of chat when we have a stable explanation. */
+export function formatRemovesnipeError(error: string): string {
+  if (error.includes("cannot_undo_out_of_date_state")) {
+    return (
+      `I can't roll that snipe back safely—the numbers moved on after it was recorded ` +
+      `(another snipe, a makeup, a duel, or a manual ELO adjust). ` +
+      `Undo only works when everyone's current rating still matches what we had right after that shot. ` +
+      `If the books truly need fixing, someone with the keys can set ratings with the adjust command.`
+    );
+  }
+  return removesnipeFailed(error);
+}
+
 export function makeupUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <sniper> <sniped1> <sniped2> … — Slack mentions like <@U123>, if you please.`;
 }
@@ -86,6 +99,46 @@ export function snipesFailed(error: string): string {
 
 export function headtoheadFailed(error: string): string {
   return `Head-to-head's locked up for the moment: ${error}`;
+}
+
+export function snipeDuelUsage(slashCommand: string): string {
+  return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points.`;
+}
+
+export function snipeDuelDurationInvalid(): string {
+  return `That duration doesn't parse. Use something like \`30m\`, \`4h\`, \`7d\`, or \`1w\` (between 1 minute and 90 days).`;
+}
+
+export function snipeDuelBetInvalid(): string {
+  return `The bet must be a positive whole number of ELO points (within reason).`;
+}
+
+export function snipeDuelSelf(): string {
+  return `You can't duel yourself—pick someone else on the field.`;
+}
+
+export function snipeDuelTargetBot(): string {
+  return `That one's a bot. Duels are for operators with a pulse.`;
+}
+
+export function snipeDuelPostedEphemeral(): string {
+  return `Challenge posted. They can accept or decline in the thread.`;
+}
+
+export function snipeDuelFailed(error: string): string {
+  return `The duel paperwork stalled: ${error}`;
+}
+
+export function duelReplyNotTarget(): string {
+  return `This answer isn't yours to give—only the challenged party may accept or decline here.`;
+}
+
+export function duelAcceptedPublic(endsSummary: string): string {
+  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel.`;
+}
+
+export function duelDeclinedPublic(): string {
+  return `Declined. No stake, no score—consider the challenge withdrawn.`;
 }
 
 export function leaderboardEmptyFallback(): string {
@@ -145,6 +198,7 @@ export function discordSnipeChannelSet(channelRef: string): string {
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
+  help: "Open the field manual: commands, rules, and the quick paths.",
   leaderboard: "Survey the standings—who's ahead today?",
   show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",

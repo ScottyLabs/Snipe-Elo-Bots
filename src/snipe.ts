@@ -32,8 +32,10 @@ export function formatSnipeConfirmation(params: {
   playerChanges: PlayerChange[];
   kind: "snipe" | "makeup";
   nameOf: (id: string) => string;
+  /** Extra block (e.g. live duel score), appended after standings. */
+  duelAppend?: string;
 }): string {
-  const { sniperId, pairMatches, playerChanges, kind, nameOf } = params;
+  const { sniperId, pairMatches, playerChanges, kind, nameOf, duelAppend } = params;
   const header =
     kind === "makeup"
       ? `Mission accomplished. A makeup snipe is filed under ${nameOf(sniperId)}; the records are thorough, you see.`
@@ -45,7 +47,7 @@ export function formatSnipeConfirmation(params: {
     return `- ${nameOf(m.sniperId)}: ${formatSigned(sniperDelta)}\n  ${nameOf(m.snipedId)}: ${formatSigned(snipedDelta)}`;
   });
 
-  return [
+  const lines = [
     header,
     "",
     "Exchange of fire:",
@@ -53,7 +55,11 @@ export function formatSnipeConfirmation(params: {
     "",
     "Standings—for the moment:",
     formatPlayerListElo(playerChanges, nameOf),
-  ].join("\n");
+  ];
+  if (duelAppend?.trim()) {
+    lines.push("", duelAppend.trim());
+  }
+  return lines.join("\n");
 }
 
 export function formatUndoConfirmation(params: {

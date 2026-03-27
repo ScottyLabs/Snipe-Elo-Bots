@@ -57,10 +57,12 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 
 | Command | Hint text (example) |
 |--------|----------------------|
+| `/help` | Show a field manual for all features and command usage. |
 | `/leaderboard` | Show ELO leaderboard in channel |
 | `/show_leaderboard` | Same as `/leaderboard` (alias) |
 | `/snipes` | Optional: `<@user>` — last 5 as shooter + last 5 times sniped (omit for yourself) |
 | `/headtohead` | Head-to-head: for each pair of people, counts A→B and B→A (undone snipes excluded) |
+| `/snipeduel` | Args: `<@opponent> <duration> <bet>` — e.g. `@user 7d 50`. Duration: `30m`, `2h`, `7d`, `1w`. Target replies in the thread with `acceptduel` or `declineduel`. |
 | `/removesnipe` | Undo last snipe in this thread (works from **main channel** only; in threads use plain `removesnipe`—Slack blocks `/` commands there) |
 | `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
 | `/adjustelo` | Args: `<user> <delta>` (integer). **Slack:** only user IDs in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` (default `U09E6EHA5R8`). |
@@ -68,7 +70,7 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 - **Request URL** (HTTP mode): same base as Events API, usually `https://<host>/slack/events` for Bolt.
 - **Socket Mode**: commands are still delivered over the socket; you must still create each slash command in the app so Slack shows them in the composer.
 
-Override names with `SLACK_LEADERBOARD_COMMAND`, `SLACK_SHOW_LEADERBOARD_COMMAND`, `SLACK_SNIPES_COMMAND`, `SLACK_HEADTOHEAD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
+Override names with `SLACK_LEADERBOARD_COMMAND`, `SLACK_SHOW_LEADERBOARD_COMMAND`, `SLACK_SNIPES_COMMAND`, `SLACK_HEADTOHEAD_COMMAND`, `SLACK_HELP_COMMAND`, `SLACK_SNIPEDUEL_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
 
 ## Slack permissions (scopes)
 At minimum, your Slack app needs scopes to:

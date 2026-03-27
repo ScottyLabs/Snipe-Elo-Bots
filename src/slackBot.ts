@@ -28,6 +28,14 @@ import { SLACK_GUILD_ID } from "./tenants";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
 import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatSlackSnipesList } from "./snipeHistory";
+import {
+  collectActiveDuelsForSnipe,
+  formatDuelChallengeBlocks,
+  formatDuelLiveScoreLineShort,
+  formatDuelSettlementMessage,
+  formatDurationLabel,
+  parseDurationToMs,
+} from "./snipeDuel";
 import * as L from "./voiceLemuen";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
@@ -94,6 +102,32 @@ async function formatSlackLeaderboardText(
     rank++;
   }
   return lines.join("\n");
+}
+
+function formatSlackHelpText(): string {
+  const c = config.slackOps;
+  return [
+    "*Snipe ELO — Help*",
+    "",
+    "*Core commands*",
+    `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard.`,
+    `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,
+    `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
+    "",
+    "*Scoring / moderation*",
+    `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
+    `• \`${c.slashAdjustElo}\` <user> <delta> — manual ELO change (allowlisted IDs only).`,
+    `• \`${c.slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainSlackCmd(c.slashUndo)}\`.`,
+    "",
+    "*Duels*",
+    `• \`${c.slashSnipeDuel}\` <@opponent> <duration> <bet> — e.g. \`${c.slashSnipeDuel} @user 7d 50\`.`,
+    "• In the challenge thread, target replies with `acceptduel` or `declineduel`.",
+    "• During the window, only snipes between those two count; winner takes the bet from loser, tie moves no points.",
+    "",
+    "*Implicit snipe rule*",
+    "• In the snipe channel, a normal message counts as a snipe when it mentions at least one non-bot target",
+    `  and ${c.snipeRequireImage ? "includes an image attachment." : "is posted (image not required in this config)."}`,
+  ].join("\n");
 }
 
 function plainSlackCmd(slashPath: string): string {
@@ -255,12 +289,36 @@ export async function startSlackBot(params: {
     const snipeNames = await resolveSlackDisplayNames(app.client, snipeIds);
     const nameOf = (id: string) => escapeSlackLeaderboardName(snipeNames.get(id) ?? id);
 
+    const nowMs = Date.now();
+    const activeDuels = collectActiveDuelsForSnipe(
+      params.db,
+      SLACK_GUILD_ID,
+      args.sniperId,
+      args.snipedIds,
+      nowMs
+    );
+    const duelAppend =
+      activeDuels.length > 0
+        ? activeDuels
+            .map((d) =>
+              formatDuelLiveScoreLineShort({
+                duel: d,
+                nameOf,
+                db: params.db,
+                guildId: SLACK_GUILD_ID,
+                nowMs,
+              })
+            )
+            .join("\n")
+        : undefined;
+
     const confirmationText = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
       pairMatches: result.pairMatches,
       playerChanges: result.playerChanges,
       nameOf,
+      duelAppend,
     });
 
     const confirmationTs = await postToThread(args.channelId, args.threadTs, confirmationText);
@@ -315,6 +373,16 @@ export async function startSlackBot(params: {
   app.command(config.slackOps.slashShowLeaderboard, async ({ command, ack, respond, client }) => {
     await ack();
     await handleSlackLeaderboardSlash(command, respond, client);
+  });
+
+  app.command(config.slackOps.slashHelp, async ({ command, ack, respond }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    await respond({ response_type: "ephemeral", text: formatSlackHelpText() });
+    opsLog("command.slash.help", { userId: command.user_id, channelId: command.channel_id });
   });
 
   const handleSlackSnipesSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
@@ -453,7 +521,7 @@ export async function startSlackBot(params: {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("command.slash.removesnipe.result", { result: "error", error: msg, threadTs });
-      await respond({ response_type: "ephemeral", text: L.removesnipeFailed(msg) });
+      await respond({ response_type: "ephemeral", text: L.formatRemovesnipeError(msg) });
     }
   });
 
@@ -592,11 +660,84 @@ export async function startSlackBot(params: {
     }
   });
 
+  app.command(config.slackOps.slashSnipeDuel, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const tokens = command.text.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length !== 3) {
+      await respond({ response_type: "ephemeral", text: L.snipeDuelUsage(config.slackOps.slashSnipeDuel) });
+      return;
+    }
+    const [targetRaw, durationRaw, betRaw] = tokens;
+    const durationMs = parseDurationToMs(durationRaw);
+    if (durationMs === null) {
+      await respond({ response_type: "ephemeral", text: L.snipeDuelDurationInvalid() });
+      return;
+    }
+    const bet = Number(betRaw);
+    if (!Number.isFinite(bet) || !Number.isInteger(bet) || bet < 1 || bet > 10_000) {
+      await respond({ response_type: "ephemeral", text: L.snipeDuelBetInvalid() });
+      return;
+    }
+    try {
+      const targetUserId = await resolveSlackUserTokenToUserId(client, targetRaw);
+      if (!targetUserId) {
+        await respond({ response_type: "ephemeral", text: L.makeupParseSniperFail() });
+        return;
+      }
+      if (targetUserId === command.user_id) {
+        await respond({ response_type: "ephemeral", text: L.snipeDuelSelf() });
+        return;
+      }
+      const prof = await getSlackUserProfileCached(client, targetUserId);
+      if (prof?.isBot) {
+        await respond({ response_type: "ephemeral", text: L.snipeDuelTargetBot() });
+        return;
+      }
+      const durationLabel = formatDurationLabel(durationMs);
+      const body = formatDuelChallengeBlocks({
+        challengerMention: `<@${command.user_id}>`,
+        targetMention: `<@${targetUserId}>`,
+        durationLabel,
+        betPoints: bet,
+      });
+      const posted = await client.chat.postMessage({
+        channel: command.channel_id,
+        text: body,
+        mrkdwn: true,
+      });
+      const rootTs = posted.ts as string;
+      params.db.insertSnipeDuel({
+        guildId: SLACK_GUILD_ID,
+        channelId: command.channel_id,
+        rootMessageTs: rootTs,
+        challengerId: command.user_id,
+        targetId: targetUserId,
+        betPoints: bet,
+        durationMs,
+      });
+      await respond({ response_type: "ephemeral", text: L.snipeDuelPostedEphemeral() });
+      opsLog("command.slash.snipeduel", {
+        userId: command.user_id,
+        targetUserId,
+        bet,
+        durationMs,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await respond({ response_type: "ephemeral", text: L.snipeDuelFailed(msg) });
+    }
+  });
+
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
   );
 
   const plainCmd = {
+    help: plainSlackCmd(config.slackOps.slashHelp),
     leaderboard: plainSlackCmd(config.slackOps.slashLeaderboard),
     showLeaderboard: plainSlackCmd(config.slackOps.slashShowLeaderboard),
     snipes: plainSlackCmd(config.slackOps.slashSnipes),
@@ -609,7 +750,7 @@ export async function startSlackBot(params: {
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} … · ${plainCmd.makeup} … · ${plainCmd.adjust} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -667,12 +808,62 @@ export async function startSlackBot(params: {
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           opsLog("command.text.removesnipe.result", { result: "error", error: msg, threadTs });
-          await postEphemeral(L.removesnipeFailed(msg));
+          await postEphemeral(L.formatRemovesnipeError(msg));
         }
         return;
       }
 
+      // Duel accept / decline in the challenge thread (plain text; always on).
+      if (threadTs && text) {
+        const duel = params.db.getSnipeDuelByRootMessageTs(SLACK_GUILD_ID, threadTs);
+        if (duel && duel.status === "pending") {
+          if (userId !== duel.targetId) {
+            await postEphemeral(L.duelReplyNotTarget());
+            return;
+          }
+          if (isCommandBody(lower, "acceptduel")) {
+            try {
+              const acceptedAt = Date.now();
+              const endsAt = acceptedAt + duel.durationMs;
+              params.db.acceptSnipeDuel(duel.duelId, SLACK_GUILD_ID, acceptedAt, endsAt);
+              const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+              await client.chat.postMessage({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: L.duelAcceptedPublic(`window closes _${endStr}_`),
+              });
+              opsLog("command.text.duel.accept", { duelId: duel.duelId, userId });
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              await postEphemeral(L.snipeDuelFailed(msg));
+            }
+            return;
+          }
+          if (isCommandBody(lower, "declineduel")) {
+            try {
+              params.db.declineSnipeDuel(duel.duelId, SLACK_GUILD_ID);
+              await client.chat.postMessage({
+                channel: channelId,
+                thread_ts: threadTs,
+                text: L.duelDeclinedPublic(),
+              });
+              opsLog("command.text.duel.decline", { duelId: duel.duelId, userId });
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              await postEphemeral(L.snipeDuelFailed(msg));
+            }
+            return;
+          }
+        }
+      }
+
       if (config.slackOps.textCommandsFallback && text) {
+        if (isCommandBody(lower, plainCmd.help)) {
+          await postEphemeral(formatSlackHelpText());
+          opsLog("command.text.help", { userId, channelId });
+          return;
+        }
+
         if (isCommandBody(lower, plainCmd.leaderboard) || isCommandBody(lower, plainCmd.showLeaderboard)) {
           try {
             const body = await formatSlackLeaderboardText(client, params.db);
@@ -960,6 +1151,52 @@ export async function startSlackBot(params: {
   }
   logger.log(`Starting Slack bot on port ${config.server.port}`);
   await app.start(config.server.port);
+
+  const settleDueSnipeDuels = async () => {
+    const due = params.db.listSnipeDuelsDueForSettlement(SLACK_GUILD_ID, Date.now());
+    for (const duel of due) {
+      try {
+        const a = duel.challengerId;
+        const b = duel.targetId;
+        const since = duel.acceptedAt ?? 0;
+        const until = duel.endsAt ?? Date.now();
+        const aToB = params.db.countDirectedSnipesInWindow(SLACK_GUILD_ID, a, b, since, until);
+        const bToA = params.db.countDirectedSnipesInWindow(SLACK_GUILD_ID, b, a, since, until);
+        const now = Date.now();
+        const names = await resolveSlackDisplayNames(app.client, [a, b]);
+        const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
+
+        if (aToB === bToA) {
+          params.db.settleSnipeDuel(duel.duelId, SLACK_GUILD_ID, null, now);
+        } else {
+          const winnerId = aToB > bToA ? a : b;
+          const loserId = aToB > bToA ? b : a;
+          params.db.adjustPlayerRating({ guildId: SLACK_GUILD_ID, playerId: winnerId, delta: duel.betPoints });
+          params.db.adjustPlayerRating({ guildId: SLACK_GUILD_ID, playerId: loserId, delta: -duel.betPoints });
+          params.db.settleSnipeDuel(duel.duelId, SLACK_GUILD_ID, winnerId, now);
+        }
+        const canvasId = await ensureCanvasOnce();
+        await updateLeaderboardCanvas({ client: app.client, db: params.db, canvasId });
+        const text = formatDuelSettlementMessage({ duel, nameOf, db: params.db, guildId: SLACK_GUILD_ID });
+        await app.client.chat.postMessage({ channel: duel.channelId, text, mrkdwn: true });
+        opsLog("duel.settled", {
+          duelId: duel.duelId,
+          tie: aToB === bToA,
+          aToB,
+          bToA,
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.error(`[snipe-elo] duel settle failed ${duel.duelId}: ${msg}`);
+        opsLog("duel.settle_failed", { duelId: duel.duelId, error: msg });
+      }
+    }
+  };
+
+  setInterval(() => {
+    void settleDueSnipeDuels();
+  }, 60_000);
+  void settleDueSnipeDuels();
 
   try {
     const purged = await purgeSlackBotPlayersFromDb(params.db, app.client);

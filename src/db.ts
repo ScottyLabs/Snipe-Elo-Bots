@@ -34,6 +34,43 @@ export type DirectedSnipePairCount = {
   count: number;
 };
 
+/** Slack snipe duel: pending → active → settled (or declined). */
+export type SnipeDuelRow = {
+  duelId: string;
+  guildId: string;
+  channelId: string;
+  rootMessageTs: string;
+  challengerId: string;
+  targetId: string;
+  betPoints: number;
+  durationMs: number;
+  status: "pending" | "active" | "declined" | "settled";
+  acceptedAt: number | null;
+  endsAt: number | null;
+  settledAt: number | null;
+  winnerId: string | null;
+  createdAt: number;
+};
+
+function mapSnipeDuelRow(row: Record<string, unknown>): SnipeDuelRow {
+  return {
+    duelId: row.duel_id as string,
+    guildId: row.guild_id as string,
+    channelId: row.channel_id as string,
+    rootMessageTs: row.root_message_ts as string,
+    challengerId: row.challenger_id as string,
+    targetId: row.target_id as string,
+    betPoints: row.bet_points as number,
+    durationMs: row.duration_ms as number,
+    status: row.status as SnipeDuelRow["status"],
+    acceptedAt: (row.accepted_at as number | null) ?? null,
+    endsAt: (row.ends_at as number | null) ?? null,
+    settledAt: (row.settled_at as number | null) ?? null,
+    winnerId: (row.winner_id as string | null) ?? null,
+    createdAt: row.created_at as number,
+  };
+}
+
 export type SnipeEventRow = {
   snipeId: string;
   guildId: string;
@@ -153,6 +190,25 @@ export class EloDb {
         sniper_delta INTEGER NOT NULL,
         PRIMARY KEY(snipe_id, pair_idx)
       );
+
+      CREATE TABLE IF NOT EXISTS snipe_duels(
+        duel_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        root_message_ts TEXT NOT NULL,
+        challenger_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        bet_points INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        accepted_at INTEGER,
+        ends_at INTEGER,
+        settled_at INTEGER,
+        winner_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_snipe_duels_guild_status_ends ON snipe_duels(guild_id, status, ends_at);
+      CREATE INDEX IF NOT EXISTS idx_snipe_duels_root ON snipe_duels(guild_id, root_message_ts);
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -792,5 +848,139 @@ export class EloDb {
       playerCount: undoPlayerChanges.length,
     });
     return { undoSnipeId, playerChanges: undoPlayerChanges };
+  }
+
+  insertSnipeDuel(args: {
+    guildId: string;
+    channelId: string;
+    rootMessageTs: string;
+    challengerId: string;
+    targetId: string;
+    betPoints: number;
+    durationMs: number;
+  }): string {
+    const duelId = newId();
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO snipe_duels(
+          duel_id, guild_id, channel_id, root_message_ts,
+          challenger_id, target_id, bet_points, duration_ms,
+          status, accepted_at, ends_at, settled_at, winner_id, created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      .run(
+        duelId,
+        args.guildId,
+        args.channelId,
+        args.rootMessageTs,
+        args.challengerId,
+        args.targetId,
+        args.betPoints,
+        args.durationMs,
+        "pending",
+        null,
+        null,
+        null,
+        null,
+        now
+      );
+    return duelId;
+  }
+
+  getSnipeDuelByRootMessageTs(guildId: string, rootMessageTs: string): SnipeDuelRow | null {
+    const row = this.db
+      .prepare(`SELECT * FROM snipe_duels WHERE guild_id = ? AND root_message_ts = ?`)
+      .get(guildId, rootMessageTs) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return mapSnipeDuelRow(row);
+  }
+
+  getActiveDuelForPair(guildId: string, userA: string, userB: string, nowMs: number): SnipeDuelRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM snipe_duels
+         WHERE guild_id = ?
+           AND status = 'active'
+           AND ends_at IS NOT NULL
+           AND ends_at > ?
+           AND (
+             (challenger_id = ? AND target_id = ?)
+             OR (challenger_id = ? AND target_id = ?)
+           )
+         LIMIT 1`
+      )
+      .get(guildId, nowMs, userA, userB, userB, userA) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return mapSnipeDuelRow(row);
+  }
+
+  listSnipeDuelsDueForSettlement(guildId: string, nowMs: number): SnipeDuelRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM snipe_duels
+         WHERE guild_id = ?
+           AND status = 'active'
+           AND ends_at IS NOT NULL
+           AND ends_at <= ?
+         ORDER BY ends_at ASC`
+      )
+      .all(guildId, nowMs) as Record<string, unknown>[];
+    return rows.map(mapSnipeDuelRow);
+  }
+
+  acceptSnipeDuel(duelId: string, guildId: string, acceptedAt: number, endsAt: number): void {
+    const r = this.db
+      .prepare(
+        `UPDATE snipe_duels SET status = 'active', accepted_at = ?, ends_at = ?
+         WHERE duel_id = ? AND guild_id = ? AND status = 'pending'`
+      )
+      .run(acceptedAt, endsAt, duelId, guildId);
+    if (r.changes === 0) throw new Error("duel_accept_failed");
+  }
+
+  declineSnipeDuel(duelId: string, guildId: string): void {
+    const r = this.db
+      .prepare(`UPDATE snipe_duels SET status = 'declined' WHERE duel_id = ? AND guild_id = ? AND status = 'pending'`)
+      .run(duelId, guildId);
+    if (r.changes === 0) throw new Error("duel_decline_failed");
+  }
+
+  settleSnipeDuel(duelId: string, guildId: string, winnerId: string | null, settledAt: number): void {
+    const r = this.db
+      .prepare(
+        `UPDATE snipe_duels SET status = 'settled', settled_at = ?, winner_id = ?
+         WHERE duel_id = ? AND guild_id = ? AND status = 'active'`
+      )
+      .run(settledAt, winnerId, duelId, guildId);
+    if (r.changes === 0) throw new Error("duel_settle_failed");
+  }
+
+  /**
+   * Counts pair rows (sniper → sniped) in snipe/makeup events that are still on the books,
+   * with event created in [sinceMs, untilMs] inclusive.
+   */
+  countDirectedSnipesInWindow(
+    guildId: string,
+    sniperId: string,
+    snipedId: string,
+    sinceMs: number,
+    untilMs: number
+  ): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c
+         FROM event_pair_matches epm
+         INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
+         WHERE se.guild_id = ?
+           AND se.type IN ('snipe', 'makeup')
+           AND se.undone_at IS NULL
+           AND epm.sniper_id = ?
+           AND epm.sniped_id = ?
+           AND se.created_at >= ?
+           AND se.created_at <= ?`
+      )
+      .get(guildId, sniperId, snipedId, sinceMs, untilMs) as { c: number } | undefined;
+    return row?.c ?? 0;
   }
 }

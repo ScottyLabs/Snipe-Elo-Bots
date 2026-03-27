@@ -41,6 +41,8 @@ export const config = {
     slashShowLeaderboard: normalizeSlashCommand(process.env.SLACK_SHOW_LEADERBOARD_COMMAND, "show_leaderboard"),
     slashSnipes: normalizeSlashCommand(process.env.SLACK_SNIPES_COMMAND, "snipes"),
     slashHeadtohead: normalizeSlashCommand(process.env.SLACK_HEADTOHEAD_COMMAND, "headtohead"),
+    slashHelp: normalizeSlashCommand(process.env.SLACK_HELP_COMMAND, "help"),
+    slashSnipeDuel: normalizeSlashCommand(process.env.SLACK_SNIPEDUEL_COMMAND, "snipeduel"),
     /** Only these Slack user IDs may use `/adjustelo`. Comma-separated in `ADJUSTELO_ALLOWED_SLACK_USER_IDS`; default is a single operator. */
     adjustEloAllowedSlackUserIds: (process.env.ADJUSTELO_ALLOWED_SLACK_USER_IDS ?? "U09E6EHA5R8")
       .split(",")

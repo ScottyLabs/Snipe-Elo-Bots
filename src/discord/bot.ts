@@ -1,4 +1,5 @@
 import {
+  AttachmentBuilder,
   Client,
   EmbedBuilder,
   Events,
@@ -28,11 +29,8 @@ import {
   takeTopDiscordHumanLeaderboard,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
-import {
-  collectIdsFromDirectedPairs,
-  formatHeadToHeadDiscordEmbedDescription,
-  HEADTOHEAD_EMPTY,
-} from "../headToHead";
+import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
+import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
 
 const DART = "🎯";
@@ -107,6 +105,29 @@ async function renderLeaderboardText(db: EloDb, guild: Guild): Promise<string[]>
     rank++;
   }
   return chunkLines(lines, 1950);
+}
+
+function formatDiscordHelpText(guild: Guild, db: EloDb): string {
+  const configuredCh = getGuildSnipeChannelId(db, guild.id);
+  const snipeLane = configuredCh ? `<#${configuredCh}>` : "_not configured yet_";
+  return [
+    "**Snipe ELO — Help**",
+    "",
+    "**Core commands**",
+    "• `/leaderboard` / `/show_leaderboard` — post the standings.",
+    "• `/snipes [player]` — latest snipes as shooter and as target.",
+    "• `/headtohead` — head-to-head matrix image (active records only).",
+    "",
+    "**Scoring / moderation**",
+    "• `/makeupsnipe <sniper> <sniped...>` — log a snipe that missed camera.",
+    "• `/removesnipe <confirmation_id>` — undo one recorded snipe.",
+    "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
+    "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
+    "",
+    "**Implicit snipe rule**",
+    `• In the configured lane (${snipeLane}), a normal message records a snipe when it mentions non-bot target(s)`,
+    `  and ${discordConfig.snipeRequireImage ? "includes an image attachment." : "is posted (image not required in this config)."}`,
+  ].join("\n");
 }
 
 async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction, db: EloDb) {
@@ -208,6 +229,9 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     const rest = new REST().setToken(discordConfig.token);
     const commands = [
       new SlashCommandBuilder()
+        .setName("help")
+        .setDescription(L.discordSlashDescriptions.help),
+      new SlashCommandBuilder()
         .setName("leaderboard")
         .setDescription(L.discordSlashDescriptions.leaderboard),
       new SlashCommandBuilder()
@@ -282,6 +306,12 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand() || !interaction.guild) return;
 
+    if (interaction.commandName === "help") {
+      await interaction.reply({ content: formatDiscordHelpText(interaction.guild, db), ephemeral: true });
+      opsLog("discord.help", { guildId: interaction.guild.id, userId: interaction.user.id });
+      return;
+    }
+
     if (interaction.commandName === "leaderboard" || interaction.commandName === "show_leaderboard") {
       await replyDiscordLeaderboard(interaction, db);
       return;
@@ -316,9 +346,12 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         const rows = db.getDirectedSnipePairCounts(interaction.guild!.id);
         const h2hIds = collectIdsFromDirectedPairs(rows);
         const h2hNames = await resolveDiscordDisplayNames(interaction.guild, h2hIds);
-        const h2hNameOf = (id: string) => escapeDiscordMarkdownChunk(h2hNames.get(id) ?? id);
-        const description = formatHeadToHeadDiscordEmbedDescription(rows, h2hNameOf);
-        if (description === null) {
+        const nameForMatrix = (id: string) => {
+          const n = h2hNames.get(id) ?? id;
+          return n.replace(/\n/g, " ").trim() || "—";
+        };
+        const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: nameForMatrix });
+        if (png === null) {
           await interaction.editReply({
             embeds: [
               new EmbedBuilder()
@@ -328,24 +361,17 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
             ],
           });
         } else {
-          const descChunks = chunkLines(description.split("\n"), 4096);
-          const embeds = descChunks.slice(0, 10).map((chunk, i) =>
-            new EmbedBuilder()
-              .setColor(HEADTOHEAD_EMBED_COLOR)
-              .setTitle(descChunks.length > 1 ? `Head-to-head (${i + 1}/${descChunks.length})` : "Head-to-head")
-              .setDescription(chunk)
-          );
-          await interaction.editReply({ embeds });
-          for (let i = 10; i < descChunks.length; i++) {
-            await interaction.followUp({
-              embeds: [
-                new EmbedBuilder()
-                  .setColor(HEADTOHEAD_EMBED_COLOR)
-                  .setTitle(`Head-to-head (${i + 1}/${descChunks.length})`)
-                  .setDescription(descChunks[i]),
-              ],
-            });
-          }
+          const file = new AttachmentBuilder(png, { name: "head-to-head.png" });
+          await interaction.editReply({
+            files: [file],
+            embeds: [
+              new EmbedBuilder()
+                .setColor(HEADTOHEAD_EMBED_COLOR)
+                .setTitle("Head-to-head")
+                .setDescription("_Snipes still on the books (undone rounds removed)._")
+                .setImage("attachment://head-to-head.png"),
+            ],
+          });
         }
         opsLog("discord.headtohead", { guildId: interaction.guild!.id, userId: interaction.user.id });
       } catch (e) {
@@ -405,7 +431,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.removesnipeFailed(msg) });
+        await interaction.editReply({ content: L.formatRemovesnipeError(msg) });
       }
       return;
     }

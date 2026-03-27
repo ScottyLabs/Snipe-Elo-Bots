@@ -11,6 +11,12 @@
     },
     "slash_commands": [
       {
+        "command": "/help",
+        "url": "https://example.com/slack/events",
+        "description": "Show all bot features and commands",
+        "should_escape": false
+      },
+      {
         "command": "/leaderboard",
         "url": "https://example.com/slack/events",
         "description": "Show ELO leaderboard in channel",
@@ -33,6 +39,13 @@
         "command": "/headtohead",
         "url": "https://example.com/slack/events",
         "description": "Head-to-head snipe counts for every pair",
+        "should_escape": false
+      },
+      {
+        "command": "/snipeduel",
+        "url": "https://example.com/slack/events",
+        "description": "Challenge someone to a timed snipe duel with ELO stake",
+        "usage_hint": "@user 7d 50",
         "should_escape": false
       },
       {
