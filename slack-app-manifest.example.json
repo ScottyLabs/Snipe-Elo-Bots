@@ -23,6 +23,19 @@
         "should_escape": false
       },
       {
+        "command": "/snipes",
+        "url": "https://example.com/slack/events",
+        "description": "Last 5 as sniper and last 5 sniped-by (optional mention)",
+        "usage_hint": "[user mention]",
+        "should_escape": false
+      },
+      {
+        "command": "/headtohead",
+        "url": "https://example.com/slack/events",
+        "description": "Head-to-head snipe counts for every pair",
+        "should_escape": false
+      },
+      {
         "command": "/removesnipe",
         "url": "https://example.com/slack/events",
         "description": "Undo last snipe in this thread",

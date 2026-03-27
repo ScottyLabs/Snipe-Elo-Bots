@@ -3,7 +3,12 @@ import { config } from "./config";
 import { EloDb } from "./db";
 import { ensureLeaderboardCanvas, updateLeaderboardCanvas } from "./canvas";
 import { purgeSlackBotPlayersFromDb } from "./purgeBotPlayers";
-import { formatAdjustEloConfirmation, formatSnipeConfirmation, formatUndoConfirmation } from "./snipe";
+import {
+  collectIdsForSnipeConfirmation,
+  formatAdjustEloConfirmation,
+  formatSnipeConfirmation,
+  formatUndoConfirmation,
+} from "./snipe";
 import {
   isLikelyImageMessage,
   isProcessableUserMessageEvent,
@@ -15,10 +20,13 @@ import { opsLog } from "./opsLog";
 import {
   escapeSlackLeaderboardName,
   getSlackUserProfileCached,
+  resolveSlackDisplayNames,
   resolveSlackUserTokenToUserId,
   takeTopSlackHumanLeaderboard,
 } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
+import { collectIdsFromDirectedPairs, formatHeadToHeadSlack } from "./headToHead";
+import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatSlackSnipesList } from "./snipeHistory";
 import * as L from "./voiceLemuen";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
@@ -215,11 +223,16 @@ export async function startSlackBot(params: {
       });
     }
 
+    const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, result.pairMatches, result.playerChanges);
+    const snipeNames = await resolveSlackDisplayNames(app.client, snipeIds);
+    const nameOf = (id: string) => escapeSlackLeaderboardName(snipeNames.get(id) ?? id);
+
     const confirmationText = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
       pairMatches: result.pairMatches,
       playerChanges: result.playerChanges,
+      nameOf,
     });
 
     const confirmationTs = await postToThread(args.channelId, args.threadTs, confirmationText);
@@ -276,6 +289,74 @@ export async function startSlackBot(params: {
     await handleSlackLeaderboardSlash(command, respond, client);
   });
 
+  const handleSlackSnipesSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const trimmed = command.text.trim();
+    let targetUserId = command.user_id as string;
+    if (trimmed) {
+      const first = trimmed.split(/\s+/)[0];
+      const id = await resolveSlackUserTokenToUserId(client, first);
+      if (!id) {
+        await respond({ response_type: "ephemeral", text: L.makeupParseSniperFail() });
+        return;
+      }
+      targetUserId = id;
+    }
+    try {
+      const asSniper = params.db.getRecentSnipesForSniper(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+      const asSniped = params.db.getRecentSnipesAsSniped(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+      const snipeLogIds = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
+      const snipeLogNames = await resolveSlackDisplayNames(client, snipeLogIds);
+      const snipeLogNameOf = (id: string) => escapeSlackLeaderboardName(snipeLogNames.get(id) ?? id);
+      const body = formatSlackSnipesList(asSniper, asSniped, snipeLogNameOf(targetUserId), snipeLogNameOf);
+      const parts = chunkSlackText(body);
+      await respond({ response_type: "in_channel", text: parts[0] ?? "(empty)" });
+      for (let i = 1; i < parts.length; i++) {
+        await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
+      }
+      opsLog("command.slash.snipes", { userId: command.user_id, targetUserId });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await respond({ response_type: "ephemeral", text: L.snipesFailed(msg) });
+    }
+  };
+
+  app.command(config.slackOps.slashSnipes, async ({ command, ack, respond, client }) => {
+    await ack();
+    await handleSlackSnipesSlash(command, respond, client);
+  });
+
+  const handleSlackHeadtoheadSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    try {
+      const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
+      const h2hIds = collectIdsFromDirectedPairs(rows);
+      const h2hNames = await resolveSlackDisplayNames(client, h2hIds);
+      const h2hNameOf = (id: string) => escapeSlackLeaderboardName(h2hNames.get(id) ?? id);
+      const body = formatHeadToHeadSlack(rows, h2hNameOf);
+      const parts = chunkSlackText(body);
+      await respond({ response_type: "in_channel", text: parts[0] ?? "(empty)" });
+      for (let i = 1; i < parts.length; i++) {
+        await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
+      }
+      opsLog("command.slash.headtohead", { userId: command.user_id });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await respond({ response_type: "ephemeral", text: L.headtoheadFailed(msg) });
+    }
+  };
+
+  app.command(config.slackOps.slashHeadtohead, async ({ command, ack, respond, client }) => {
+    await ack();
+    await handleSlackHeadtoheadSlash(command, respond, client);
+  });
+
   app.command(config.slackOps.slashUndo, async ({ command, ack, respond, client }) => {
     await ack();
     if (command.channel_id !== config.slack.channelId) {
@@ -309,10 +390,14 @@ export async function startSlackBot(params: {
       });
       const canvasId = await ensureCanvasOnce();
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+      const undoIds = undoResult.playerChanges.map((c) => c.playerId);
+      const undoNames = await resolveSlackDisplayNames(client, undoIds);
+      const undoNameOf = (id: string) => escapeSlackLeaderboardName(undoNames.get(id) ?? id);
       const undoText = formatUndoConfirmation({
         kind: "undo",
         undoingSnipeId: snipe.snipeId,
         playerChanges: undoResult.playerChanges,
+        nameOf: undoNameOf,
       });
       await client.chat.postMessage({
         channel: command.channel_id,
@@ -371,9 +456,11 @@ export async function startSlackBot(params: {
         await respond({ response_type: "ephemeral", text: L.snipeMakeupIncludesBot() });
         return;
       }
+      const callerSnap = await getSlackUserProfileCached(client, command.user_id);
+      const callerName = escapeSlackLeaderboardName(callerSnap?.displayName ?? command.user_id);
       const root = await client.chat.postMessage({
         channel: command.channel_id,
-        text: L.makeupRootMessage(`<@${command.user_id}>`, config.slackOps.slashMakeup),
+        text: L.makeupRootMessage(callerName, config.slackOps.slashMakeup),
       });
       const rootTs = root.ts as string;
       await handleApplySnipe({
@@ -448,6 +535,8 @@ export async function startSlackBot(params: {
       });
       const canvasId = await ensureCanvasOnce();
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+      const adjNames = await resolveSlackDisplayNames(client, [change.playerId]);
+      const adjNameOf = (id: string) => escapeSlackLeaderboardName(adjNames.get(id) ?? id);
       await client.chat.postMessage({
         channel: command.channel_id,
         text: formatAdjustEloConfirmation({
@@ -455,6 +544,7 @@ export async function startSlackBot(params: {
           beforeRating: change.beforeRating,
           afterRating: change.afterRating,
           delta: change.delta,
+          nameOf: adjNameOf,
         }),
       });
       await respond({ response_type: "ephemeral", text: L.adjustSuccessEphemeral() });
@@ -467,12 +557,14 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
   );
 
   const plainCmd = {
     leaderboard: plainSlackCmd(config.slackOps.slashLeaderboard),
     showLeaderboard: plainSlackCmd(config.slackOps.slashShowLeaderboard),
+    snipes: plainSlackCmd(config.slackOps.slashSnipes),
+    headtohead: plainSlackCmd(config.slackOps.slashHeadtohead),
     undo: plainSlackCmd(config.slackOps.slashUndo),
     makeup: plainSlackCmd(config.slackOps.slashMakeup),
     adjust: plainSlackCmd(config.slackOps.slashAdjustElo),
@@ -481,7 +573,7 @@ export async function startSlackBot(params: {
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} · ${plainCmd.makeup} … · ${plainCmd.adjust} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} … · ${plainCmd.makeup} … · ${plainCmd.adjust} …`
         : "")
   );
 
@@ -524,10 +616,14 @@ export async function startSlackBot(params: {
           });
           const canvasId = await ensureCanvasOnce();
           await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+          const undoIdsText = undoResult.playerChanges.map((c) => c.playerId);
+          const undoNamesText = await resolveSlackDisplayNames(client, undoIdsText);
+          const undoNameOfText = (id: string) => escapeSlackLeaderboardName(undoNamesText.get(id) ?? id);
           const undoText = formatUndoConfirmation({
             kind: "undo",
             undoingSnipeId: snipe.snipeId,
             playerChanges: undoResult.playerChanges,
+            nameOf: undoNameOfText,
           });
           await client.chat.postMessage({ channel: channelId, thread_ts: threadTs, text: undoText });
           await postEphemeral(L.removesnipeUndoAckEphemeral());
@@ -556,6 +652,60 @@ export async function startSlackBot(params: {
           return;
         }
 
+        if (isCommandBody(lower, plainCmd.snipes)) {
+          const parts = text.split(/\s+/).filter(Boolean);
+          let targetUserId = userId;
+          if (parts.length > 1) {
+            const tid = await resolveSlackUserTokenToUserId(client, parts[1]);
+            if (!tid) {
+              await postEphemeral(L.makeupParseSniperFail());
+              return;
+            }
+            targetUserId = tid;
+          }
+          try {
+            const asSniper = params.db.getRecentSnipesForSniper(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+            const asSniped = params.db.getRecentSnipesAsSniped(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+            const snipeLogIdsText = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
+            const snipeLogNamesText = await resolveSlackDisplayNames(client, snipeLogIdsText);
+            const snipeLogNameOfText = (id: string) => escapeSlackLeaderboardName(snipeLogNamesText.get(id) ?? id);
+            const body = formatSlackSnipesList(
+              asSniper,
+              asSniped,
+              snipeLogNameOfText(targetUserId),
+              snipeLogNameOfText
+            );
+            const chunks = chunkSlackText(body);
+            for (let i = 0; i < chunks.length; i++) {
+              await client.chat.postMessage({ channel: channelId, thread_ts: ts, text: chunks[i] });
+            }
+            opsLog("command.text.snipes", { userId, targetUserId });
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await postEphemeral(L.snipesFailed(msg));
+          }
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.headtohead)) {
+          try {
+            const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
+            const h2hIdsText = collectIdsFromDirectedPairs(rows);
+            const h2hNamesText = await resolveSlackDisplayNames(client, h2hIdsText);
+            const h2hNameOfText = (id: string) => escapeSlackLeaderboardName(h2hNamesText.get(id) ?? id);
+            const body = formatHeadToHeadSlack(rows, h2hNameOfText);
+            const chunks = chunkSlackText(body);
+            for (let i = 0; i < chunks.length; i++) {
+              await client.chat.postMessage({ channel: channelId, thread_ts: ts, text: chunks[i] });
+            }
+            opsLog("command.text.headtohead", { userId, channelId });
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await postEphemeral(L.headtoheadFailed(msg));
+          }
+          return;
+        }
+
         if (isCommandBody(lower, plainCmd.makeup)) {
           const parts = text.split(/\s+/).filter(Boolean);
           if (parts.length < 3) {
@@ -576,9 +726,11 @@ export async function startSlackBot(params: {
               await postEphemeral(L.snipeMakeupIncludesBot());
               return;
             }
+            const callerSnapText = await getSlackUserProfileCached(client, userId);
+            const callerNameText = escapeSlackLeaderboardName(callerSnapText?.displayName ?? userId);
             const root = await client.chat.postMessage({
               channel: channelId,
-              text: L.makeupRootMessage(`<@${userId}>`, config.slackOps.slashMakeup),
+              text: L.makeupRootMessage(callerNameText, config.slackOps.slashMakeup),
             });
             const rootTs = root.ts as string;
             await handleApplySnipe({
@@ -637,6 +789,8 @@ export async function startSlackBot(params: {
             });
             const canvasId = await ensureCanvasOnce();
             await updateLeaderboardCanvas({ client, db: params.db, canvasId });
+            const adjNamesTxt = await resolveSlackDisplayNames(client, [change.playerId]);
+            const adjNameOfTxt = (id: string) => escapeSlackLeaderboardName(adjNamesTxt.get(id) ?? id);
             await client.chat.postMessage({
               channel: channelId,
               text: formatAdjustEloConfirmation({
@@ -644,6 +798,7 @@ export async function startSlackBot(params: {
                 beforeRating: change.beforeRating,
                 afterRating: change.afterRating,
                 delta: change.delta,
+                nameOf: adjNameOfTxt,
               }),
             });
             await postEphemeral(L.adjustSuccessEphemeral());

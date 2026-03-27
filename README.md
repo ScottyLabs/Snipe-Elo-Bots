@@ -43,6 +43,8 @@ Set **`SLACK_TEXT_COMMANDS_FALLBACK=true`**. In the snipe channel you can then s
 | Plain text | Notes |
 |------------|--------|
 | `leaderboard` / `show_leaderboard` | Bot replies in the thread under your message. |
+| `snipes` / `snipes <@user>` | Last 5 as sniper and last 5 sniped-by (defaults to you). |
+| `headtohead` | Pairwise snipe counts between everyone (still on the books). |
 | `removesnipe` | **Always works** in the snipe thread (no env flag). Slack does not run custom `/removesnipe` from thread composers—type plain `removesnipe` there. |
 | `makeupsnipe <sniper> <sniped…>` | Same arguments as slash; mentions as `<@U…>`. |
 | `adjustelo <user> <delta>` | Same allowlist as slash (`ADJUSTELO_ALLOWED_SLACK_USER_IDS`). |
@@ -57,6 +59,8 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 |--------|----------------------|
 | `/leaderboard` | Show ELO leaderboard in channel |
 | `/show_leaderboard` | Same as `/leaderboard` (alias) |
+| `/snipes` | Optional: `<@user>` — last 5 as shooter + last 5 times sniped (omit for yourself) |
+| `/headtohead` | Head-to-head: for each pair of people, counts A→B and B→A (undone snipes excluded) |
 | `/removesnipe` | Undo last snipe in this thread (works from **main channel** only; in threads use plain `removesnipe`—Slack blocks `/` commands there) |
 | `/makeupsnipe` | Args: `<sniper> <sniped1> …` (mentions) |
 | `/adjustelo` | Args: `<user> <delta>` (integer). **Slack:** only user IDs in `ADJUSTELO_ALLOWED_SLACK_USER_IDS` (default `U09E6EHA5R8`). |
@@ -64,7 +68,7 @@ In [your Slack app](https://api.slack.com/apps) → **Slash Commands**, create c
 - **Request URL** (HTTP mode): same base as Events API, usually `https://<host>/slack/events` for Bolt.
 - **Socket Mode**: commands are still delivered over the socket; you must still create each slash command in the app so Slack shows them in the composer.
 
-Override names with `SLACK_LEADERBOARD_COMMAND`, `SLACK_SHOW_LEADERBOARD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
+Override names with `SLACK_LEADERBOARD_COMMAND`, `SLACK_SHOW_LEADERBOARD_COMMAND`, `SLACK_SNIPES_COMMAND`, `SLACK_HEADTOHEAD_COMMAND`, `UNDO_COMMAND`, `MAKEUP_COMMAND`, `ADJUSTELO_COMMAND` (with or without a leading `/` in env; the bot normalizes to `/name`).
 
 ## Slack permissions (scopes)
 At minimum, your Slack app needs scopes to:

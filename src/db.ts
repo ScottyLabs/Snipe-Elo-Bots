@@ -27,6 +27,13 @@ export type PlayerChange = {
   delta: number;
 };
 
+/** Count of snipe/makeup pair rows still on the books (parent event not undone). */
+export type DirectedSnipePairCount = {
+  sniperId: string;
+  snipedId: string;
+  count: number;
+};
+
 export type SnipeEventRow = {
   snipeId: string;
   guildId: string;
@@ -40,6 +47,16 @@ export type SnipeEventRow = {
   undoneAt: number | null;
   confirmationMessageTs: string | null;
   createdAt: number;
+};
+
+/** One pair row: this user was `snipedId` (target); parent event metadata for display. */
+export type SnipeReceivedRow = {
+  snipeId: string;
+  sniperId: string;
+  snipedId: string;
+  type: string;
+  createdAt: number;
+  undoneAt: number | null;
 };
 
 function newId(): string {
@@ -540,6 +557,92 @@ export class EloDb {
       .get(guildId, threadTs) as Record<string, unknown> | undefined;
     if (!row) return null;
     return mapSnipeRow(row);
+  }
+
+  /** Latest snipe/makeup events where this user was the sniper (includes later-undone rows). */
+  getRecentSnipesForSniper(guildId: string, sniperId: string, limit: number): SnipeEventRow[] {
+    const cap = Math.min(Math.max(1, limit), 50);
+    const rows = this.db
+      .prepare(
+        `
+      SELECT *
+      FROM snipe_events
+      WHERE guild_id = ?
+        AND sniper_id = ?
+        AND type IN ('snipe', 'makeup')
+      ORDER BY created_at DESC
+      LIMIT ?
+    `
+      )
+      .all(guildId, sniperId, cap) as Record<string, unknown>[];
+    return rows.map(mapSnipeRow);
+  }
+
+  /**
+   * Latest pair rows where this user was sniped (one row per shooter→target pair in an event).
+   * Includes events later undone (same as sniper log).
+   */
+  getRecentSnipesAsSniped(guildId: string, snipedId: string, limit: number): SnipeReceivedRow[] {
+    const cap = Math.min(Math.max(1, limit), 50);
+    const rows = this.db
+      .prepare(
+        `
+      SELECT se.snipe_id AS snipe_id,
+             epm.sniper_id AS sniper_id,
+             epm.sniped_id AS sniped_id,
+             se.type AS type,
+             se.created_at AS created_at,
+             se.undone_at AS undone_at
+      FROM event_pair_matches epm
+      INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
+      WHERE se.guild_id = ?
+        AND epm.sniped_id = ?
+        AND se.type IN ('snipe', 'makeup')
+      ORDER BY se.created_at DESC
+      LIMIT ?
+    `
+      )
+      .all(guildId, snipedId, cap) as {
+      snipe_id: string;
+      sniper_id: string;
+      sniped_id: string;
+      type: string;
+      created_at: number;
+      undone_at: number | null;
+    }[];
+    return rows.map((r) => ({
+      snipeId: r.snipe_id,
+      sniperId: r.sniper_id,
+      snipedId: r.sniped_id,
+      type: r.type,
+      createdAt: r.created_at,
+      undoneAt: r.undone_at,
+    }));
+  }
+
+  /**
+   * Per ordered pair (sniper → sniped), how many pair rows exist in events that still count
+   * (snipe/makeup, not undone). Used for head-to-head.
+   */
+  getDirectedSnipePairCounts(guildId: string): DirectedSnipePairCount[] {
+    const rows = this.db
+      .prepare(
+        `
+      SELECT epm.sniper_id AS sniper_id, epm.sniped_id AS sniped_id, COUNT(*) AS c
+      FROM event_pair_matches epm
+      INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
+      WHERE se.guild_id = ?
+        AND se.type IN ('snipe', 'makeup')
+        AND se.undone_at IS NULL
+      GROUP BY epm.sniper_id, epm.sniped_id
+    `
+      )
+      .all(guildId) as { sniper_id: string; sniped_id: string; c: number }[];
+    return rows.map((r) => ({
+      sniperId: r.sniper_id,
+      snipedId: r.sniped_id,
+      count: r.c,
+    }));
   }
 
   getEventPlayerChanges(snipeId: string): PlayerChange[] {

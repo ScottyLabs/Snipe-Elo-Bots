@@ -15,13 +15,20 @@ import { opsLog } from "../opsLog";
 import * as L from "../voiceLemuen";
 import { discordConfig } from "./configDiscord";
 import {
+  collectIdsForSnipeConfirmation,
   formatAdjustEloConfirmation,
   formatSnipeConfirmation,
   formatUndoConfirmation,
 } from "../snipe";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
-import { escapeDiscordMarkdownChunk, takeTopDiscordHumanLeaderboard } from "../discordDisplayNames";
+import {
+  escapeDiscordMarkdownChunk,
+  resolveDiscordDisplayNames,
+  takeTopDiscordHumanLeaderboard,
+} from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
+import { collectIdsFromDirectedPairs, formatHeadToHeadDiscord } from "../headToHead";
+import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
 
 const DART = "🎯";
 const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
@@ -124,7 +131,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
   });
 
   async function handleApplySnipeDiscord(args: {
-    guildId: string;
+    guild: Guild;
     type: "snipe" | "makeup";
     channelId: string;
     threadTs: string;
@@ -136,7 +143,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     replyFn: (content: string) => Promise<Message<boolean>>;
   }) {
     opsLog("discord.snipe.apply", {
-      guildId: args.guildId,
+      guildId: args.guild.id,
       kind: args.type,
       channelId: args.channelId,
       threadTs: args.threadTs,
@@ -145,7 +152,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     });
 
     const result = db.applySnipe({
-      guildId: args.guildId,
+      guildId: args.guild.id,
       type: args.type,
       channelId: args.channelId,
       threadTs: args.threadTs,
@@ -158,18 +165,23 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       await args.sourceMessage.react(DART).catch(() => {});
     }
 
+    const ids = collectIdsForSnipeConfirmation(args.sniperId, result.pairMatches, result.playerChanges);
+    const names = await resolveDiscordDisplayNames(args.guild, ids);
+    const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
+
     const text = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
       pairMatches: result.pairMatches,
       playerChanges: result.playerChanges,
+      nameOf,
     });
 
     const reply = await args.replyFn(text);
-    db.setConfirmationMessageTs(args.guildId, result.snipeId, reply.id);
+    db.setConfirmationMessageTs(args.guild.id, result.snipeId, reply.id);
 
     opsLog("discord.snipe.done", {
-      guildId: args.guildId,
+      guildId: args.guild.id,
       snipeId: result.snipeId,
       channelId: args.channelId,
     });
@@ -195,6 +207,18 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       new SlashCommandBuilder()
         .setName("show_leaderboard")
         .setDescription(L.discordSlashDescriptions.show_leaderboard),
+      new SlashCommandBuilder()
+        .setName("snipes")
+        .setDescription(L.discordSlashDescriptions.snipes)
+        .addUserOption((o) =>
+          o
+            .setName("player")
+            .setDescription("Whose snipe log to open (defaults to you)")
+            .setRequired(false)
+        ),
+      new SlashCommandBuilder()
+        .setName("headtohead")
+        .setDescription(L.discordSlashDescriptions.headtohead),
       new SlashCommandBuilder()
         .setName("removesnipe")
         .setDescription(L.discordSlashDescriptions.removesnipe)
@@ -257,6 +281,50 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       return;
     }
 
+    if (interaction.commandName === "snipes") {
+      await interaction.deferReply();
+      try {
+        const target = interaction.options.getUser("player") ?? interaction.user;
+        const asSniper = db.getRecentSnipesForSniper(interaction.guild.id, target.id, SNIPES_LOG_LIMIT);
+        const asSniped = db.getRecentSnipesAsSniped(interaction.guild.id, target.id, SNIPES_LOG_LIMIT);
+        const snipeIds = collectIdsForSnipeLog(target.id, asSniper, asSniped);
+        const snipeNames = await resolveDiscordDisplayNames(interaction.guild, snipeIds);
+        const snipeNameOf = (id: string) => escapeDiscordMarkdownChunk(snipeNames.get(id) ?? id);
+        const text = formatDiscordSnipesList(asSniper, asSniped, snipeNameOf(target.id), snipeNameOf);
+        await interaction.editReply({ content: text });
+        opsLog("discord.snipes", {
+          guildId: interaction.guild.id,
+          targetId: target.id,
+          actorId: interaction.user.id,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: L.snipesFailed(msg) });
+      }
+      return;
+    }
+
+    if (interaction.commandName === "headtohead") {
+      await interaction.deferReply();
+      try {
+        const rows = db.getDirectedSnipePairCounts(interaction.guild!.id);
+        const h2hIds = collectIdsFromDirectedPairs(rows);
+        const h2hNames = await resolveDiscordDisplayNames(interaction.guild, h2hIds);
+        const h2hNameOf = (id: string) => escapeDiscordMarkdownChunk(h2hNames.get(id) ?? id);
+        const text = formatHeadToHeadDiscord(rows, h2hNameOf);
+        const parts = chunkLines(text.split("\n"), 1950);
+        await interaction.editReply({ content: parts[0] ?? "(empty)" });
+        for (let i = 1; i < parts.length; i++) {
+          await interaction.followUp({ content: parts[i] });
+        }
+        opsLog("discord.headtohead", { guildId: interaction.guild!.id, userId: interaction.user.id });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: L.headtoheadFailed(msg) });
+      }
+      return;
+    }
+
     if (interaction.commandName === "removesnipe") {
       const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
       if (!expectedCh || interaction.channelId !== expectedCh) {
@@ -293,11 +361,15 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
           threadTs: snipe.threadTs,
           snipeIdToUndo: snipe.snipeId,
         });
+        const undoIds = undoResult.playerChanges.map((c) => c.playerId);
+        const undoNames = await resolveDiscordDisplayNames(interaction.guild, undoIds);
+        const undoNameOf = (id: string) => escapeDiscordMarkdownChunk(undoNames.get(id) ?? id);
         await interaction.editReply({
           content: formatUndoConfirmation({
             kind: "undo",
             undoingSnipeId: snipe.snipeId,
             playerChanges: undoResult.playerChanges,
+            nameOf: undoNameOf,
           }),
         });
         opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
@@ -345,7 +417,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
           }
         }
         await handleApplySnipeDiscord({
-          guildId: interaction.guild.id,
+          guild: interaction.guild,
           type: "makeup",
           channelId: interaction.channelId,
           threadTs: interaction.id,
@@ -406,12 +478,15 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
           playerId: target.id,
           delta,
         });
+        const adjNames = await resolveDiscordDisplayNames(interaction.guild, [change.playerId]);
+        const adjNameOf = (id: string) => escapeDiscordMarkdownChunk(adjNames.get(id) ?? id);
         await interaction.editReply({
           content: formatAdjustEloConfirmation({
             playerId: change.playerId,
             beforeRating: change.beforeRating,
             afterRating: change.afterRating,
             delta: change.delta,
+            nameOf: adjNameOf,
           }),
         });
         opsLog("discord.adjustelo.ok", { guildId: interaction.guild.id, playerId: target.id, delta });
@@ -455,7 +530,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       }
 
       await handleApplySnipeDiscord({
-        guildId: message.guild.id,
+        guild: message.guild,
         type: "snipe",
         channelId: message.channelId,
         threadTs: message.id,

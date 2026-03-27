@@ -38,8 +38,8 @@ export function makeupParseSniperFail(): string {
   return `I couldn't make sense of the sniper. A proper mention—<@U123>—would help.`;
 }
 
-export function makeupRootMessage(userMention: string, slashCommand: string): string {
-  return `${userMention} called \`${slashCommand}\`. The paperwork follows in the thread~`;
+export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
+  return `${callerDisplayName} called \`${slashCommand}\`. The paperwork follows in the thread~`;
 }
 
 export function makeupSuccessEphemeral(): string {
@@ -76,6 +76,14 @@ export function adjustEloForbidden(): string {
 
 export function leaderboardFailed(error: string): string {
   return `The roster slipped through my fingers: ${error}`;
+}
+
+export function snipesFailed(error: string): string {
+  return `The logbook jammed: ${error}`;
+}
+
+export function headtoheadFailed(error: string): string {
+  return `The tally room’s locked: ${error}`;
 }
 
 export function leaderboardEmptyFallback(): string {
@@ -141,4 +149,6 @@ export const discordSlashDescriptions = {
   makeupsnipe: "Log a snipe that missed the camera—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
+  snipes: "Last 5 snipes as shooter and last 5 times sniped (optional user; default you).",
+  headtohead: "Head-to-head snipe counts between everyone (still on the books).",
 } as const;
