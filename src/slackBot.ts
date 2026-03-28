@@ -112,23 +112,27 @@ async function buildSlackLeaderboardBlockKit(args: {
   ];
 
   if (totalPages > 1) {
+    // Keep both buttons enabled: some Slack clients render an empty action bar when the first
+    // control is disabled. Values clamp on the server via clampLeaderboardPage.
+    const prevPage = Math.max(1, page - 1);
+    const nextPage = Math.min(totalPages, page + 1);
+    blocks.push({ type: "divider" });
     blocks.push({
       type: "actions",
       block_id: "leaderboard_nav",
       elements: [
         {
           type: "button",
-          text: { type: "plain_text", text: "Prev", emoji: false },
+          text: { type: "plain_text", text: "Prev" },
           action_id: SLACK_LEADERBOARD_PREV_ACTION,
-          value: String(page - 1),
-          disabled: page <= 1,
+          value: String(prevPage),
         },
         {
           type: "button",
-          text: { type: "plain_text", text: "Next", emoji: false },
+          text: { type: "plain_text", text: "Next" },
+          style: "primary",
           action_id: SLACK_LEADERBOARD_NEXT_ACTION,
-          value: String(page + 1),
-          disabled: page >= totalPages,
+          value: String(nextPage),
         },
       ],
     });
@@ -147,7 +151,7 @@ async function postSlackLeaderboardMessage(
   channelId: string,
   db: EloDb,
   page: number,
-  opts?: { thread_ts?: string }
+  opts?: { thread_ts?: string; hintUserId?: string }
 ): Promise<void> {
   const kit = await buildSlackLeaderboardBlockKit({ client, db, page });
   const base = {
@@ -155,15 +159,41 @@ async function postSlackLeaderboardMessage(
     ...(opts?.thread_ts ? { thread_ts: opts.thread_ts } : {}),
   };
   try {
-    await client.chat.postMessage({
+    const postRes = await client.chat.postMessage({
       ...base,
       blocks: kit.blocks,
       text: kit.fallbackText,
     });
+    const posted = postRes?.message as { blocks?: { type?: string; elements?: unknown[] }[] } | undefined;
+    if (posted?.blocks && kit.blocks.some((b: { type?: string }) => b.type === "actions")) {
+      const hasActionsWithButtons = posted.blocks.some(
+        (b) => b?.type === "actions" && Array.isArray(b.elements) && b.elements.length > 0
+      );
+      if (!hasActionsWithButtons) {
+        opsLog("slack.leaderboard.actions_missing_after_post", {
+          channelId,
+          returnedBlockTypes: posted.blocks.map((b) => b?.type).join(","),
+        });
+        if (opts?.hintUserId) {
+          await client.chat
+            .postEphemeral({
+              channel: channelId,
+              user: opts.hintUserId,
+              text: L.slackLeaderboardPagingInteractivityHint(),
+            })
+            .catch(() => {});
+        }
+      }
+    }
   } catch (blockPostErr: unknown) {
     const msg = blockPostErr instanceof Error ? blockPostErr.message : String(blockPostErr);
     opsLog("slack.leaderboard.post_blocks_failed", { error: msg, channelId });
-    const parts = chunkSlackText(kit.plainText);
+    const wantedButtons = kit.blocks.some((b: { type?: string }) => b.type === "actions");
+    let plain = kit.plainText;
+    if (wantedButtons) {
+      plain = `${plain}\n\n${L.slackLeaderboardPagingInteractivityHint()}`;
+    }
+    const parts = chunkSlackText(plain);
     for (let i = 0; i < parts.length; i++) {
       await client.chat.postMessage({
         ...base,
@@ -444,7 +474,9 @@ export async function startSlackBot(params: {
       return;
     }
     try {
-      await postSlackLeaderboardMessage(client, command.channel_id, params.db, 1);
+      await postSlackLeaderboardMessage(client, command.channel_id, params.db, 1, {
+        hintUserId: command.user_id,
+      });
       opsLog("command.slash.leaderboard", {
         userId: command.user_id,
         channelId: command.channel_id,

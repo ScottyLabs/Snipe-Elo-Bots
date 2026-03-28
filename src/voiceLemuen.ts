@@ -93,6 +93,16 @@ export function leaderboardFailed(error: string): string {
   return `The roster slipped through my fingers: ${error}`;
 }
 
+/** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
+export function slackLeaderboardPagingInteractivityHint(): string {
+  return (
+    `To get Prev/Next buttons: Slack app → Interactivity & Shortcuts → turn *Interactivity* on. ` +
+    `With *Socket Mode*, no Request URL is needed—events and button clicks use the socket. ` +
+    `With HTTP mode only, set the Request URL to your Bolt endpoint (e.g. https://…/slack/events). ` +
+    `Reinstall the app after changing scopes or interactivity.`
+  );
+}
+
 export function snipesFailed(error: string): string {
   return `The logbook jammed: ${error}`;
 }
