@@ -76,6 +76,8 @@ export function escapeSlackLeaderboardName(s: string): string {
     .replace(/\*/g, "·")
     .replace(/_/g, "·")
     .replace(/`/g, "'")
+    .replace(/</g, "‹")
+    .replace(/>/g, "›")
     .replace(/\n/g, " ")
     .trim() || "—";
 }

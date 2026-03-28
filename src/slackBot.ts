@@ -55,7 +55,9 @@ function chunkSlackText(text: string, maxLen = 3500): string[] {
   return chunks;
 }
 
-const SLACK_LEADERBOARD_PAGE_ACTION = "leaderboard_page";
+/** Slack requires unique action_id per interactive element on a message (prev/next cannot share one id). */
+const SLACK_LEADERBOARD_PREV_ACTION = "leaderboard_prev";
+const SLACK_LEADERBOARD_NEXT_ACTION = "leaderboard_next";
 
 function clampLeaderboardPage(page: number, totalPages: number): number {
   if (!Number.isFinite(page) || totalPages < 1) return 1;
@@ -92,6 +94,11 @@ async function buildSlackLeaderboardBlockKit(args: {
     mrkdwn = lines.join("\n");
   }
 
+  // Section mrkdwn hard limit 3000 chars; avoid Slack rejecting / erroring on overflow.
+  if (mrkdwn.length > 2950) {
+    mrkdwn = `${mrkdwn.slice(0, 2940).trimEnd()}…\n_(truncated — narrow the board or raise page size in env.)_`;
+  }
+
   const blocks: any[] = [
     { type: "section", text: { type: "mrkdwn", text: mrkdwn } },
   ];
@@ -103,15 +110,15 @@ async function buildSlackLeaderboardBlockKit(args: {
       elements: [
         {
           type: "button",
-          text: { type: "plain_text", text: "← Prev", emoji: true },
-          action_id: SLACK_LEADERBOARD_PAGE_ACTION,
+          text: { type: "plain_text", text: "Prev", emoji: false },
+          action_id: SLACK_LEADERBOARD_PREV_ACTION,
           value: String(page - 1),
           disabled: page <= 1,
         },
         {
           type: "button",
-          text: { type: "plain_text", text: "Next →", emoji: true },
-          action_id: SLACK_LEADERBOARD_PAGE_ACTION,
+          text: { type: "plain_text", text: "Next", emoji: false },
+          action_id: SLACK_LEADERBOARD_NEXT_ACTION,
           value: String(page + 1),
           disabled: page >= totalPages,
         },
@@ -420,13 +427,23 @@ export async function startSlackBot(params: {
     await handleSlackLeaderboardSlash(command, respond, client);
   });
 
-  app.action(SLACK_LEADERBOARD_PAGE_ACTION, async ({ ack, body, action, client }) => {
+  const handleSlackLeaderboardPageButton = async ({
+    ack,
+    body,
+    action,
+    client,
+  }: {
+    ack: () => Promise<void>;
+    body: unknown;
+    action: { value?: string };
+    client: any;
+  }) => {
     await ack();
     const ch = (body as { channel?: { id?: string } }).channel;
     if (!ch?.id || ch.id !== config.slack.channelId) return;
     const message = (body as { message?: { ts?: string } }).message;
     if (!message?.ts) return;
-    const rawVal = (action as { value?: string }).value;
+    const rawVal = action.value;
     const nextPage = parseInt(rawVal ?? "1", 10);
     if (!Number.isFinite(nextPage)) return;
     try {
@@ -449,7 +466,24 @@ export async function startSlackBot(params: {
       const msg = e instanceof Error ? e.message : String(e);
       opsLog("interaction.leaderboard.page_failed", { error: msg });
     }
-  });
+  };
+
+  app.action(SLACK_LEADERBOARD_PREV_ACTION, async (args) =>
+    handleSlackLeaderboardPageButton({
+      ack: args.ack,
+      body: args.body,
+      action: args.action as { value?: string },
+      client: args.client,
+    })
+  );
+  app.action(SLACK_LEADERBOARD_NEXT_ACTION, async (args) =>
+    handleSlackLeaderboardPageButton({
+      ack: args.ack,
+      body: args.body,
+      action: args.action as { value?: string },
+      client: args.client,
+    })
+  );
 
   app.command(config.slackOps.slashHelp, async ({ command, ack, respond }) => {
     await ack();
