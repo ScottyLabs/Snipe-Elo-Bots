@@ -68,7 +68,7 @@ async function buildSlackLeaderboardBlockKit(args: {
   client: any;
   db: EloDb;
   page: number;
-}): Promise<{ blocks: any[]; fallbackText: string }> {
+}): Promise<{ blocks: any[]; fallbackText: string; plainText: string }> {
   const { client, db } = args;
   const title = config.leaderboard.title;
   const pageSize = config.leaderboard.pageSize;
@@ -81,22 +81,30 @@ async function buildSlackLeaderboardBlockKit(args: {
   const pagePlayers = allHumans.slice(start, start + pageSize);
 
   let mrkdwn: string;
+  let plainText: string;
   if (allHumans.length === 0) {
     mrkdwn = `*${title}*\n${L.leaderboardEmptyFallback()}`;
+    plainText = `${title}\n${L.leaderboardEmptyFallback()}`;
   } else {
-    const lines: string[] = [`*${title}* · _page ${page} of ${totalPages}_`, ""];
+    const mdLines: string[] = [`*${title}* · _page ${page} of ${totalPages}_`, ""];
+    const plainLines: string[] = [`${title} · page ${page} of ${totalPages}`, ""];
     let rank = start + 1;
     for (const p of pagePlayers) {
       const label = escapeSlackLeaderboardName(displayNames.get(p.playerId) ?? p.playerId);
-      lines.push(`${rank}. ${label} — *${p.rating}*`);
+      mdLines.push(`${rank}. ${label} — *${p.rating}*`);
+      plainLines.push(`${rank}. ${label} — ${p.rating}`);
       rank++;
     }
-    mrkdwn = lines.join("\n");
+    mrkdwn = mdLines.join("\n");
+    plainText = plainLines.join("\n");
   }
 
   // Section mrkdwn hard limit 3000 chars; avoid Slack rejecting / erroring on overflow.
   if (mrkdwn.length > 2950) {
     mrkdwn = `${mrkdwn.slice(0, 2940).trimEnd()}…\n_(truncated — narrow the board or raise page size in env.)_`;
+  }
+  if (plainText.length > 3500) {
+    plainText = `${plainText.slice(0, 3490).trimEnd()}…`;
   }
 
   const blocks: any[] = [
@@ -126,7 +134,43 @@ async function buildSlackLeaderboardBlockKit(args: {
     });
   }
 
-  return { blocks, fallbackText: `${title} · page ${page}/${totalPages}` };
+  return {
+    blocks,
+    fallbackText: `${title} · page ${page}/${totalPages}`,
+    plainText,
+  };
+}
+
+/** Slash-command `respond({ in_channel, blocks })` often 500s on Slack’s response_url; use chat.postMessage instead. */
+async function postSlackLeaderboardMessage(
+  client: any,
+  channelId: string,
+  db: EloDb,
+  page: number,
+  opts?: { thread_ts?: string }
+): Promise<void> {
+  const kit = await buildSlackLeaderboardBlockKit({ client, db, page });
+  const base = {
+    channel: channelId,
+    ...(opts?.thread_ts ? { thread_ts: opts.thread_ts } : {}),
+  };
+  try {
+    await client.chat.postMessage({
+      ...base,
+      blocks: kit.blocks,
+      text: kit.fallbackText,
+    });
+  } catch (blockPostErr: unknown) {
+    const msg = blockPostErr instanceof Error ? blockPostErr.message : String(blockPostErr);
+    opsLog("slack.leaderboard.post_blocks_failed", { error: msg, channelId });
+    const parts = chunkSlackText(kit.plainText);
+    for (let i = 0; i < parts.length; i++) {
+      await client.chat.postMessage({
+        ...base,
+        text: parts[i],
+      });
+    }
+  }
 }
 
 const HEADTOHEAD_SLACK_FILE_COMMENT =
@@ -400,12 +444,7 @@ export async function startSlackBot(params: {
       return;
     }
     try {
-      const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
-        client,
-        db: params.db,
-        page: 1,
-      });
-      await respond({ response_type: "in_channel", blocks, text: fallbackText });
+      await postSlackLeaderboardMessage(client, command.channel_id, params.db, 1);
       opsLog("command.slash.leaderboard", {
         userId: command.user_id,
         channelId: command.channel_id,
@@ -413,7 +452,11 @@ export async function startSlackBot(params: {
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      await respond({ response_type: "ephemeral", text: L.leaderboardFailed(msg) });
+      try {
+        await respond({ response_type: "ephemeral", text: L.leaderboardFailed(msg) });
+      } catch {
+        // response_url may already be consumed; nothing else to do
+      }
     }
   };
 
@@ -447,17 +490,31 @@ export async function startSlackBot(params: {
     const nextPage = parseInt(rawVal ?? "1", 10);
     if (!Number.isFinite(nextPage)) return;
     try {
-      const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
+      const kit = await buildSlackLeaderboardBlockKit({
         client,
         db: params.db,
         page: nextPage,
       });
-      await client.chat.update({
-        channel: ch.id,
-        ts: message.ts,
-        blocks,
-        text: fallbackText,
-      });
+      try {
+        await client.chat.update({
+          channel: ch.id,
+          ts: message.ts,
+          blocks: kit.blocks,
+          text: kit.fallbackText,
+        });
+      } catch {
+        try {
+          await client.chat.update({
+            channel: ch.id,
+            ts: message.ts,
+            text: kit.plainText,
+            blocks: [],
+          });
+        } catch (plainUpdErr: unknown) {
+          const um = plainUpdErr instanceof Error ? plainUpdErr.message : String(plainUpdErr);
+          opsLog("interaction.leaderboard.page_plain_update_failed", { error: um });
+        }
+      }
       opsLog("interaction.leaderboard.page", {
         page: nextPage,
         userId: (body as { user?: { id?: string } }).user?.id,
@@ -997,17 +1054,7 @@ export async function startSlackBot(params: {
 
         if (isCommandBody(lower, plainCmd.leaderboard) || isCommandBody(lower, plainCmd.showLeaderboard)) {
           try {
-            const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
-              client,
-              db: params.db,
-              page: 1,
-            });
-            await client.chat.postMessage({
-              channel: channelId,
-              thread_ts: ts,
-              blocks,
-              text: fallbackText,
-            });
+            await postSlackLeaderboardMessage(client, channelId, params.db, 1, { thread_ts: ts });
             opsLog("command.text.leaderboard", { userId, channelId });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
