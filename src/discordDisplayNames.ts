@@ -54,20 +54,30 @@ export async function resolveDiscordDisplayNames(guild: Guild, userIds: string[]
   return out;
 }
 
+/** Rating-sorted humans up to `maxHumans` (for pagination). */
+export async function takeDiscordHumanLeaderboardPaged(
+  guild: Guild,
+  sortedPlayers: PlayerRating[],
+  maxHumans: number
+): Promise<{ allHumans: PlayerRating[]; nameMap: Map<string, string> }> {
+  const allHumans: PlayerRating[] = [];
+  const nameMap = new Map<string, string>();
+  for (const p of sortedPlayers) {
+    if (allHumans.length >= maxHumans) break;
+    const e = await getDiscordUserEntryCached(guild, p.playerId);
+    if (e.isBot) continue;
+    allHumans.push(p);
+    nameMap.set(p.playerId, e.name);
+  }
+  return { allHumans, nameMap };
+}
+
 /** Rating-sorted slice of human (non-bot) players for leaderboard text. */
 export async function takeTopDiscordHumanLeaderboard(
   guild: Guild,
   sortedPlayers: PlayerRating[],
   topN: number
 ): Promise<{ players: PlayerRating[]; nameMap: Map<string, string> }> {
-  const players: PlayerRating[] = [];
-  const nameMap = new Map<string, string>();
-  for (const p of sortedPlayers) {
-    if (players.length >= topN) break;
-    const e = await getDiscordUserEntryCached(guild, p.playerId);
-    if (e.isBot) continue;
-    players.push(p);
-    nameMap.set(p.playerId, e.name);
-  }
-  return { players, nameMap };
+  const { allHumans, nameMap } = await takeDiscordHumanLeaderboardPaged(guild, sortedPlayers, topN);
+  return { players: allHumans, nameMap };
 }

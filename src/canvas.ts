@@ -1,7 +1,7 @@
 import { config } from "./config";
 import type { EloDb, PlayerRating } from "./db";
 import { opsLog } from "./opsLog";
-import { escapeSlackTableCell, takeTopSlackHumanLeaderboard } from "./slackDisplayNames";
+import { escapeSlackTableCell, takeSlackHumanLeaderboardPaged } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
 
 function slackErrorCode(err: unknown): string | undefined {
@@ -25,19 +25,30 @@ function normalizeCanvasMarkdown(markdown: string): string {
   return markdown.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-export function renderLeaderboardMarkdown(players: PlayerRating[], displayNames: Map<string, string>): string {
-  const rows = players.slice(0, config.leaderboard.topN);
+export function renderLeaderboardMarkdown(
+  pageRows: PlayerRating[],
+  displayNames: Map<string, string>,
+  meta?: { startRank: number; totalListedHumans: number; totalPages: number }
+): string {
   const title = config.leaderboard.title;
 
-  if (rows.length === 0) {
+  if (pageRows.length === 0) {
     return normalizeCanvasMarkdown(`# ${title}\n\n_No ratings yet._`);
   }
 
-  const lines: string[] = [`# ${title}`, "", "| Rank | Player | ELO |", "|---:|---|---:|"];
+  const lines: string[] = [`# ${title}`, ""];
+  if (meta && meta.totalPages > 1) {
+    lines.push(
+      `_Showing ranks ${meta.startRank}–${meta.startRank + pageRows.length - 1} (page 1 of ${meta.totalPages}; top ${meta.totalListedHumans} on the board). Use /leaderboard in channel to flip pages._`,
+      ""
+    );
+  }
+  lines.push("| Rank | Player | ELO |", "|---:|---|---:|");
 
-  for (let i = 0; i < rows.length; i++) {
-    const p = rows[i];
-    const rank = i + 1;
+  const startRank = meta?.startRank ?? 1;
+  for (let i = 0; i < pageRows.length; i++) {
+    const p = pageRows[i];
+    const rank = startRank + i;
     const raw = displayNames.get(p.playerId) ?? p.playerId;
     const playerLabel = escapeSlackTableCell(raw);
     lines.push(`| ${rank} | ${playerLabel} | ${p.rating} |`);
@@ -92,12 +103,19 @@ export async function ensureLeaderboardCanvas(params: {
   await ensureBotInChannel(client, config.slack.channelId);
 
   const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const { players, displayNames } = await takeTopSlackHumanLeaderboard(
+  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(
     client,
     sorted,
     config.leaderboard.topN
   );
-  const markdown = renderLeaderboardMarkdown(players, displayNames);
+  const pageSize = config.leaderboard.pageSize;
+  const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
+  const pageSlice = allHumans.slice(0, Math.min(pageSize, allHumans.length));
+  const markdown = renderLeaderboardMarkdown(pageSlice, displayNames, {
+    startRank: 1,
+    totalListedHumans: allHumans.length,
+    totalPages,
+  });
   let created: { canvas_id?: string; id?: string };
   try {
     created = await client.canvases.create({
@@ -128,12 +146,19 @@ export async function updateLeaderboardCanvas(params: {
 }): Promise<void> {
   const { client, db, canvasId } = params;
   const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const { players, displayNames } = await takeTopSlackHumanLeaderboard(
+  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(
     client,
     sorted,
     config.leaderboard.topN
   );
-  const markdown = renderLeaderboardMarkdown(players, displayNames);
+  const pageSize = config.leaderboard.pageSize;
+  const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
+  const pageSlice = allHumans.slice(0, Math.min(pageSize, allHumans.length));
+  const markdown = renderLeaderboardMarkdown(pageSlice, displayNames, {
+    startRank: 1,
+    totalListedHumans: allHumans.length,
+    totalPages,
+  });
 
   await client.canvases.edit({
     canvas_id: canvasId,
@@ -147,7 +172,7 @@ export async function updateLeaderboardCanvas(params: {
   await setCanvasTabTitle(client, canvasId);
   opsLog("canvas.leaderboard.updated", {
     canvasId,
-    playerCount: players.length,
+    playerCount: allHumans.length,
   });
 }
 

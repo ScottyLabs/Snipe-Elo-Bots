@@ -1,5 +1,8 @@
 import {
+  ActionRowBuilder,
   AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   EmbedBuilder,
   Events,
@@ -27,7 +30,7 @@ import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserI
 import {
   escapeDiscordMarkdownChunk,
   resolveDiscordDisplayNames,
-  takeTopDiscordHumanLeaderboard,
+  takeDiscordHumanLeaderboardPaged,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
@@ -94,41 +97,66 @@ async function resolveDuelRootMessageId(message: Message, snipeChannelId: string
   return null;
 }
 
-function chunkLines(lines: string[], maxLen = 1900): string[] {
-  const chunks: string[] = [];
-  let cur = "";
-  for (const line of lines) {
-    const next = cur ? `${cur}\n${line}` : line;
-    if (next.length > maxLen) {
-      if (cur) chunks.push(cur);
-      cur = line.length > maxLen ? line.slice(0, maxLen) : line;
-    } else {
-      cur = next;
-    }
-  }
-  if (cur) chunks.push(cur);
-  return chunks;
+function discordLeaderboardButtonCustomId(guildId: string, page: number): string {
+  return `lb:${guildId}:${page}`;
 }
 
-async function renderLeaderboardText(db: EloDb, guild: Guild): Promise<string[]> {
+function clampDiscordLeaderboardPage(page: number, totalPages: number): number {
+  if (!Number.isFinite(page) || totalPages < 1) return 1;
+  return Math.min(Math.max(1, Math.floor(page)), totalPages);
+}
+
+async function buildDiscordLeaderboardPayload(
+  db: EloDb,
+  guild: Guild,
+  page: number
+): Promise<{ content: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
   const guildId = guild.id;
   const sorted = db.getAllPlayersSorted(guildId);
-  const { players, nameMap } = await takeTopDiscordHumanLeaderboard(
+  const { allHumans, nameMap } = await takeDiscordHumanLeaderboardPaged(
     guild,
     sorted,
     discordConfig.leaderboardTopN
   );
+  const pageSize = discordConfig.leaderboardPageSize;
+  const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
+  const p = clampDiscordLeaderboardPage(page, totalPages);
+  const start = (p - 1) * pageSize;
+  const slice = allHumans.slice(start, start + pageSize);
   const base = discordConfig.leaderboardTitle;
   const title = guild.name ? `${guild.name} — ${base}` : base;
-  if (players.length === 0) return [`**${title}**\n${L.leaderboardEmptyFallback()}`];
-  const lines: string[] = [`**${title}**`, ""];
-  let rank = 1;
-  for (const p of players) {
-    const label = escapeDiscordMarkdownChunk(nameMap.get(p.playerId) ?? p.playerId);
-    lines.push(`${rank}. ${label} — **${p.rating}**`);
-    rank++;
+
+  let content: string;
+  if (allHumans.length === 0) {
+    content = `**${title}**\n${L.leaderboardEmptyFallback()}`;
+  } else {
+    const lines: string[] = [`**${title}** · _page ${p} of ${totalPages}_`, ""];
+    let rank = start + 1;
+    for (const pl of slice) {
+      const label = escapeDiscordMarkdownChunk(nameMap.get(pl.playerId) ?? pl.playerId);
+      lines.push(`${rank}. ${label} — **${pl.rating}**`);
+      rank++;
+    }
+    content = lines.join("\n");
   }
-  return chunkLines(lines, 1950);
+
+  if (totalPages <= 1) {
+    return { content, components: [] };
+  }
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(discordLeaderboardButtonCustomId(guildId, p - 1))
+      .setLabel("Prev")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(p <= 1),
+    new ButtonBuilder()
+      .setCustomId(discordLeaderboardButtonCustomId(guildId, p + 1))
+      .setLabel("Next")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(p >= totalPages)
+  );
+  return { content, components: [row] };
 }
 
 function formatDiscordHelpText(guild: Guild, db: EloDb): string {
@@ -138,7 +166,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "**Snipe ELO — Help**",
     "",
     "**Core commands**",
-    "• `/leaderboard` / `/show_leaderboard` — post the standings.",
+    "• `/leaderboard` / `/show_leaderboard` — post the standings (paged; Prev/Next on the message).",
     "• `/snipes [player]` — latest snipes as shooter and as target.",
     "• `/headtohead` — head-to-head matrix image (active records only).",
     "",
@@ -153,24 +181,6 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     `• In the configured lane (${snipeLane}), a normal message records a snipe when it mentions non-bot target(s)`,
     `  and ${discordConfig.snipeRequireImage ? "includes an image attachment." : "is posted (image not required in this config)."}`,
   ].join("\n");
-}
-
-async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction, db: EloDb) {
-  try {
-    await interaction.deferReply();
-    const parts = await renderLeaderboardText(db, interaction.guild!);
-    await interaction.editReply({ content: parts[0] ?? L.leaderboardEmptyFallback() });
-    for (let i = 1; i < parts.length; i++) {
-      await interaction.followUp({ content: parts[i] });
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: L.leaderboardFailed(msg) }).catch(() => {});
-    } else {
-      await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
-    }
-  }
 }
 
 export async function startDiscordBot(db: EloDb): Promise<void> {
@@ -422,7 +432,44 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     void settleDueDiscordSnipeDuels();
   });
 
+  async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction) {
+    try {
+      await interaction.deferReply();
+      const { content, components } = await buildDiscordLeaderboardPayload(db, interaction.guild!, 1);
+      await interaction.editReply({ content, components });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: L.leaderboardFailed(msg) }).catch(() => {});
+      } else {
+        await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
+      }
+    }
+  }
+
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isButton()) {
+      const m = /^lb:(\d+):(\d+)$/.exec(interaction.customId);
+      if (m) {
+        const guildId = m[1];
+        const page = parseInt(m[2], 10);
+        if (!interaction.guild || interaction.guild.id !== guildId) {
+          await interaction.reply({ content: "That board belongs to another server.", ephemeral: true }).catch(() => {});
+          return;
+        }
+        try {
+          await interaction.deferUpdate();
+          const { content, components } = await buildDiscordLeaderboardPayload(db, interaction.guild, page);
+          await interaction.editReply({ content, components });
+          opsLog("discord.leaderboard.page", { guildId, page, userId: interaction.user.id });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await interaction.followUp({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
+        }
+        return;
+      }
+    }
+
     if (!interaction.isChatInputCommand() || !interaction.guild) return;
 
     if (interaction.commandName === "help") {
@@ -432,7 +479,7 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
     }
 
     if (interaction.commandName === "leaderboard" || interaction.commandName === "show_leaderboard") {
-      await replyDiscordLeaderboard(interaction, db);
+      await replyDiscordLeaderboard(interaction);
       return;
     }
 

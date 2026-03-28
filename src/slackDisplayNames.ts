@@ -90,22 +90,32 @@ export async function resolveSlackDisplayNames(client: SlackInfoClient, userIds:
   return out;
 }
 
+/** Walk rating-sorted players; skip bots and deleted until `maxHumans` humans collected (for pagination). */
+export async function takeSlackHumanLeaderboardPaged(
+  client: SlackInfoClient,
+  sortedPlayers: PlayerRating[],
+  maxHumans: number
+): Promise<{ allHumans: PlayerRating[]; displayNames: Map<string, string> }> {
+  const allHumans: PlayerRating[] = [];
+  const displayNames = new Map<string, string>();
+  for (const p of sortedPlayers) {
+    if (allHumans.length >= maxHumans) break;
+    const snap = await getSlackUserProfileCached(client, p.playerId);
+    if (!snap || snap.isBot || snap.deleted) continue;
+    allHumans.push(p);
+    displayNames.set(p.playerId, snap.displayName);
+  }
+  return { allHumans, displayNames };
+}
+
 /** Walk rating-sorted players; skip bots and deleted accounts until `topN` humans (for canvas / text leaderboard). */
 export async function takeTopSlackHumanLeaderboard(
   client: SlackInfoClient,
   sortedPlayers: PlayerRating[],
   topN: number
 ): Promise<{ players: PlayerRating[]; displayNames: Map<string, string> }> {
-  const players: PlayerRating[] = [];
-  const displayNames = new Map<string, string>();
-  for (const p of sortedPlayers) {
-    if (players.length >= topN) break;
-    const snap = await getSlackUserProfileCached(client, p.playerId);
-    if (!snap || snap.isBot || snap.deleted) continue;
-    players.push(p);
-    displayNames.set(p.playerId, snap.displayName);
-  }
-  return { players, displayNames };
+  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sortedPlayers, topN);
+  return { players: allHumans, displayNames };
 }
 
 type UsersListClient = {

@@ -54,5 +54,6 @@ export const discordConfig = {
     (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()
   ),
   leaderboardTopN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
+  leaderboardPageSize: Math.max(3, Number(process.env.LEADERBOARD_PAGE_SIZE ?? 12)),
   leaderboardTitle: process.env.LEADERBOARD_TITLE ?? "ELO Leaderboard",
 };

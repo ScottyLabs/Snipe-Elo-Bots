@@ -25,6 +25,8 @@ export const config = {
   leaderboard: {
     title: process.env.LEADERBOARD_CANVAS_TITLE ?? "ELO Leaderboard",
     topN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
+    /** Humans per page for chat leaderboard + first canvas page. */
+    pageSize: Math.max(3, Number(process.env.LEADERBOARD_PAGE_SIZE ?? 12)),
     /** If set, use this canvas instead of creating a new one (Slack SDK has no canvases.list). */
     canvasIdOverride: process.env.LEADERBOARD_CANVAS_ID?.trim() || null,
   },

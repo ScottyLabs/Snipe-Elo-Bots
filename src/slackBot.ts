@@ -22,7 +22,7 @@ import {
   getSlackUserProfileCached,
   resolveSlackDisplayNames,
   resolveSlackUserTokenToUserId,
-  takeTopSlackHumanLeaderboard,
+  takeSlackHumanLeaderboardPaged,
 } from "./slackDisplayNames";
 import { SLACK_GUILD_ID } from "./tenants";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
@@ -55,6 +55,73 @@ function chunkSlackText(text: string, maxLen = 3500): string[] {
   return chunks;
 }
 
+const SLACK_LEADERBOARD_PAGE_ACTION = "leaderboard_page";
+
+function clampLeaderboardPage(page: number, totalPages: number): number {
+  if (!Number.isFinite(page) || totalPages < 1) return 1;
+  return Math.min(Math.max(1, Math.floor(page)), totalPages);
+}
+
+async function buildSlackLeaderboardBlockKit(args: {
+  client: any;
+  db: EloDb;
+  page: number;
+}): Promise<{ blocks: any[]; fallbackText: string }> {
+  const { client, db } = args;
+  const title = config.leaderboard.title;
+  const pageSize = config.leaderboard.pageSize;
+  const topN = config.leaderboard.topN;
+  const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
+  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sorted, topN);
+  const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
+  const page = clampLeaderboardPage(args.page, totalPages);
+  const start = (page - 1) * pageSize;
+  const pagePlayers = allHumans.slice(start, start + pageSize);
+
+  let mrkdwn: string;
+  if (allHumans.length === 0) {
+    mrkdwn = `*${title}*\n${L.leaderboardEmptyFallback()}`;
+  } else {
+    const lines: string[] = [`*${title}* · _page ${page} of ${totalPages}_`, ""];
+    let rank = start + 1;
+    for (const p of pagePlayers) {
+      const label = escapeSlackLeaderboardName(displayNames.get(p.playerId) ?? p.playerId);
+      lines.push(`${rank}. ${label} — *${p.rating}*`);
+      rank++;
+    }
+    mrkdwn = lines.join("\n");
+  }
+
+  const blocks: any[] = [
+    { type: "section", text: { type: "mrkdwn", text: mrkdwn } },
+  ];
+
+  if (totalPages > 1) {
+    blocks.push({
+      type: "actions",
+      block_id: "leaderboard_nav",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "← Prev", emoji: true },
+          action_id: SLACK_LEADERBOARD_PAGE_ACTION,
+          value: String(page - 1),
+          disabled: page <= 1,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Next →", emoji: true },
+          action_id: SLACK_LEADERBOARD_PAGE_ACTION,
+          value: String(page + 1),
+          disabled: page >= totalPages,
+        },
+      ],
+    });
+  }
+
+  return { blocks, fallbackText: `${title} · page ${page}/${totalPages}` };
+}
+
 const HEADTOHEAD_SLACK_FILE_COMMENT =
   "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._";
 
@@ -82,35 +149,13 @@ function slackHeadtoheadUploadErrorMessage(msg: string): string {
   return base;
 }
 
-async function formatSlackLeaderboardText(
-  client: { users: { info: (a: { user: string }) => Promise<unknown> } },
-  db: EloDb
-): Promise<string> {
-  const title = config.leaderboard.title;
-  const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const { players, displayNames } = await takeTopSlackHumanLeaderboard(
-    client,
-    sorted,
-    config.leaderboard.topN
-  );
-  if (players.length === 0) return `*${title}*\n${L.leaderboardEmptyFallback()}`;
-  const lines: string[] = [`*${title}*`, ""];
-  let rank = 1;
-  for (const p of players) {
-    const label = escapeSlackLeaderboardName(displayNames.get(p.playerId) ?? p.playerId);
-    lines.push(`${rank}. ${label} — *${p.rating}*`);
-    rank++;
-  }
-  return lines.join("\n");
-}
-
 function formatSlackHelpText(): string {
   const c = config.slackOps;
   return [
     "*Snipe ELO — Help*",
     "",
     "*Core commands*",
-    `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard.`,
+    `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard (paged; use Prev/Next in the message).`,
     `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,
     `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
     "",
@@ -348,12 +393,12 @@ export async function startSlackBot(params: {
       return;
     }
     try {
-      const body = await formatSlackLeaderboardText(client, params.db);
-      const parts = chunkSlackText(body);
-      await respond({ response_type: "in_channel", text: parts[0] ?? L.leaderboardEmptyFallback() });
-      for (let i = 1; i < parts.length; i++) {
-        await client.chat.postMessage({ channel: command.channel_id, text: parts[i] });
-      }
+      const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
+        client,
+        db: params.db,
+        page: 1,
+      });
+      await respond({ response_type: "in_channel", blocks, text: fallbackText });
       opsLog("command.slash.leaderboard", {
         userId: command.user_id,
         channelId: command.channel_id,
@@ -373,6 +418,37 @@ export async function startSlackBot(params: {
   app.command(config.slackOps.slashShowLeaderboard, async ({ command, ack, respond, client }) => {
     await ack();
     await handleSlackLeaderboardSlash(command, respond, client);
+  });
+
+  app.action(SLACK_LEADERBOARD_PAGE_ACTION, async ({ ack, body, action, client }) => {
+    await ack();
+    const ch = (body as { channel?: { id?: string } }).channel;
+    if (!ch?.id || ch.id !== config.slack.channelId) return;
+    const message = (body as { message?: { ts?: string } }).message;
+    if (!message?.ts) return;
+    const rawVal = (action as { value?: string }).value;
+    const nextPage = parseInt(rawVal ?? "1", 10);
+    if (!Number.isFinite(nextPage)) return;
+    try {
+      const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
+        client,
+        db: params.db,
+        page: nextPage,
+      });
+      await client.chat.update({
+        channel: ch.id,
+        ts: message.ts,
+        blocks,
+        text: fallbackText,
+      });
+      opsLog("interaction.leaderboard.page", {
+        page: nextPage,
+        userId: (body as { user?: { id?: string } }).user?.id,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      opsLog("interaction.leaderboard.page_failed", { error: msg });
+    }
   });
 
   app.command(config.slackOps.slashHelp, async ({ command, ack, respond }) => {
@@ -887,11 +963,17 @@ export async function startSlackBot(params: {
 
         if (isCommandBody(lower, plainCmd.leaderboard) || isCommandBody(lower, plainCmd.showLeaderboard)) {
           try {
-            const body = await formatSlackLeaderboardText(client, params.db);
-            const parts = chunkSlackText(body);
-            for (let i = 0; i < parts.length; i++) {
-              await client.chat.postMessage({ channel: channelId, thread_ts: ts, text: parts[i] });
-            }
+            const { blocks, fallbackText } = await buildSlackLeaderboardBlockKit({
+              client,
+              db: params.db,
+              page: 1,
+            });
+            await client.chat.postMessage({
+              channel: channelId,
+              thread_ts: ts,
+              blocks,
+              text: fallbackText,
+            });
             opsLog("command.text.leaderboard", { userId, channelId });
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
