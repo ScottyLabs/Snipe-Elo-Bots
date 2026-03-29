@@ -42,6 +42,12 @@
         "should_escape": false
       },
       {
+        "command": "/bounty",
+        "url": "https://example.com/slack/events",
+        "description": "Today's bounty marks and open 2× slots",
+        "should_escape": false
+      },
+      {
         "command": "/snipeduel",
         "url": "https://example.com/slack/events",
         "description": "Challenge someone to a timed snipe duel with ELO stake",

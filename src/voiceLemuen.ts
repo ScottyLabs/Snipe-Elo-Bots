@@ -257,6 +257,74 @@ export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boole
     : "**Daily bounty** — **2× ELO** on these exchanges:";
 }
 
+export function bountySlashDisabled(_platform: "slack" | "discord"): string {
+  return "Daily bounty is switched off in this deployment—nothing to list, I'm afraid.";
+}
+
+export function bountySlashNoLedgerYet(platform: "slack" | "discord", dateLabel: string): string {
+  if (platform === "slack") {
+    return (
+      `*Daily bounty* — ${dateLabel}\n` +
+      `_I don't have today's marks on file yet. They land after the midnight roll—or shortly after the bot catches up, if it was asleep~_`
+    );
+  }
+  return (
+    `**Daily bounty** — ${dateLabel}\n` +
+    `*I don't have today's marks on file yet. They land after the midnight roll—or shortly after the bot catches up, if it was asleep~*`
+  );
+}
+
+export function bountySlashEmptyMarks(platform: "slack" | "discord", dateLabel: string): string {
+  if (platform === "slack") {
+    return (
+      `*Daily bounty* — ${dateLabel}\n` +
+      `_The board didn't yield enough human marks for a list when the ledger was drawn. Nothing to chase today._`
+    );
+  }
+  return (
+    `**Daily bounty** — ${dateLabel}\n` +
+    `*The board didn't yield enough human marks for a list when the ledger was drawn. Nothing to chase today.*`
+  );
+}
+
+export function bountySlashListHeader(
+  platform: "slack" | "discord",
+  dateLabel: string,
+  timeZoneIana: string
+): string {
+  if (platform === "slack") {
+    return (
+      `*Daily bounty* — ${dateLabel} (_${timeZoneIana}_)\n` +
+      `_First snipe landing on a mark today scores 2× ELO for that exchange._`
+    );
+  }
+  return (
+    `**Daily bounty** — ${dateLabel} (*${timeZoneIana}*)\n` +
+    `*First snipe landing on a mark today scores 2× ELO for that exchange.*`
+  );
+}
+
+export function bountySlashMarkLine(
+  platform: "slack" | "discord",
+  rank: number,
+  displayName: string,
+  claimed: boolean
+): string {
+  if (platform === "slack") {
+    const status = claimed ? "_claimed today_" : "_2× still open—first to snipe them wins it_";
+    return `${rank}. ${displayName} — ${status}`;
+  }
+  const status = claimed ? "*claimed today*" : "*2× still open—first to snipe them wins it*";
+  return `${rank}. ${displayName} — ${status}`;
+}
+
+export function bountySlashFooter(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return "_Marks who snipe others use normal ELO—only being sniped as a mark can trigger 2×._";
+  }
+  return "*Marks who snipe others use normal ELO—only being sniped as a mark can trigger 2×.*";
+}
+
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
   help: "Open the field manual: commands, rules, and the quick paths.",
@@ -269,4 +337,5 @@ export const discordSlashDescriptions = {
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
   headtohead: "Pairwise snipe counts for everyone still on the books.",
   snipeduel: "Challenge someone to a timed snipe duel with an ELO stake.",
+  bounty: "Today's bounty marks and whether each 2× reward is still open.",
 } as const;

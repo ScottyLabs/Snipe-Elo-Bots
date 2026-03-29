@@ -37,6 +37,9 @@ import {
   parseDurationToMs,
 } from "./snipeDuel";
 import * as L from "./voiceLemuen";
+import { calendarDateKeyInTimeZone } from "./bounty";
+import { bountyEnv } from "./bountyEnv";
+import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
@@ -240,6 +243,7 @@ function formatSlackHelpText(): string {
     `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard (paged; use Prev/Next in the message).`,
     `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,
     `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
+    `• \`${c.slashBounty}\` — today's bounty marks and whether each 2× slot is still open.`,
     "",
     "*Scoring / moderation*",
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
@@ -469,6 +473,20 @@ export async function startSlackBot(params: {
     });
   };
 
+  const buildSlackBountyStatusMarkdown = async (client: any): Promise<string> => {
+    const dk = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
+    const row = params.db.getDailyBountyAnnouncementRow(SLACK_GUILD_ID, dk);
+    const ids = row?.targetIds ?? [];
+    const names = await resolveSlackDisplayNames(client, ids);
+    const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
+    return formatBountyStatusMessage({
+      platform: "slack",
+      db: params.db,
+      guildId: SLACK_GUILD_ID,
+      nameOf,
+    });
+  };
+
   const handleSlackLeaderboardSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
     if (command.channel_id !== config.slack.channelId) {
       await wrongChannelEphemeral(respond);
@@ -583,6 +601,22 @@ export async function startSlackBot(params: {
     }
     await respond({ response_type: "ephemeral", text: formatSlackHelpText() });
     opsLog("command.slash.help", { userId: command.user_id, channelId: command.channel_id });
+  });
+
+  app.command(config.slackOps.slashBounty, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    try {
+      const bountySlashText = await buildSlackBountyStatusMarkdown(client);
+      await respond({ response_type: "in_channel", text: bountySlashText, mrkdwn: true });
+      opsLog("command.slash.bounty", { userId: command.user_id, channelId: command.channel_id });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await respond({ response_type: "ephemeral", text: `Couldn't read the bounty ledger: ${msg}` });
+    }
   });
 
   const handleSlackSnipesSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
@@ -933,7 +967,7 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
   );
 
   const plainCmd = {
@@ -942,6 +976,7 @@ export async function startSlackBot(params: {
     showLeaderboard: plainSlackCmd(config.slackOps.slashShowLeaderboard),
     snipes: plainSlackCmd(config.slackOps.slashSnipes),
     headtohead: plainSlackCmd(config.slackOps.slashHeadtohead),
+    bounty: plainSlackCmd(config.slackOps.slashBounty),
     undo: plainSlackCmd(config.slackOps.slashUndo),
     makeup: plainSlackCmd(config.slackOps.slashMakeup),
     adjust: plainSlackCmd(config.slackOps.slashAdjustElo),
@@ -950,7 +985,7 @@ export async function startSlackBot(params: {
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1165,6 +1200,23 @@ export async function startSlackBot(params: {
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
             await postEphemeral(slackHeadtoheadUploadErrorMessage(msg));
+          }
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.bounty)) {
+          try {
+            const bountyFbText = await buildSlackBountyStatusMarkdown(client);
+            await client.chat.postMessage({
+              channel: channelId,
+              ...(threadTs ? { thread_ts: threadTs } : {}),
+              text: bountyFbText,
+              mrkdwn: true,
+            });
+            opsLog("command.text.bounty", { userId, channelId });
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            await postEphemeral(`Couldn't read the bounty ledger: ${msg}`);
           }
           return;
         }

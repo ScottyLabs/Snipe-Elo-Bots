@@ -33,6 +33,9 @@ import {
   takeDiscordHumanLeaderboardPaged,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
+import { calendarDateKeyInTimeZone } from "../bounty";
+import { bountyEnv } from "../bountyEnv";
+import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
 import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
@@ -170,6 +173,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "• `/leaderboard` / `/show_leaderboard` — post the standings (paged; Prev/Next on the message).",
     "• `/snipes [player]` — latest snipes as shooter and as target.",
     "• `/headtohead` — head-to-head matrix image (active records only).",
+    "• `/bounty` — today's bounty marks and whether each 2× reward is still open.",
     "",
     "**Scoring / moderation**",
     "• `/makeupsnipe <sniper> <sniped...>` — log a snipe that missed camera.",
@@ -311,6 +315,9 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       new SlashCommandBuilder()
         .setName("headtohead")
         .setDescription(L.discordSlashDescriptions.headtohead),
+      new SlashCommandBuilder()
+        .setName("bounty")
+        .setDescription(L.discordSlashDescriptions.bounty),
       new SlashCommandBuilder()
         .setName("removesnipe")
         .setDescription(L.discordSlashDescriptions.removesnipe)
@@ -511,6 +518,34 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await interaction.editReply({ content: L.snipesFailed(msg) });
+      }
+      return;
+    }
+
+    if (interaction.commandName === "bounty") {
+      if (!interaction.guild) {
+        await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+      await interaction.deferReply();
+      try {
+        const guildId = interaction.guild.id;
+        const dateKey = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
+        const row = db.getDailyBountyAnnouncementRow(guildId, dateKey);
+        const bountyIds = row?.targetIds ?? [];
+        const bountyNames = await resolveDiscordDisplayNames(interaction.guild, bountyIds);
+        const bountyNameOf = (id: string) => escapeDiscordMarkdownChunk(bountyNames.get(id) ?? id);
+        const text = formatBountyStatusMessage({
+          platform: "discord",
+          db,
+          guildId,
+          nameOf: bountyNameOf,
+        });
+        await interaction.editReply({ content: text });
+        opsLog("discord.bounty", { guildId, userId: interaction.user.id });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: `Couldn't read the bounty ledger: ${msg}` }).catch(() => {});
       }
       return;
     }

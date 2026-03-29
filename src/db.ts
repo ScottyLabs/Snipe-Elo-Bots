@@ -359,16 +359,37 @@ export class EloDb {
   }
 
   getDailyBountyTargets(guildId: string, bountyDate: string): string[] {
+    const row = this.getDailyBountyAnnouncementRow(guildId, bountyDate);
+    return row?.targetIds ?? [];
+  }
+
+  /** Row for that calendar day, or null if the bot has not stored a list yet. */
+  getDailyBountyAnnouncementRow(
+    guildId: string,
+    bountyDate: string
+  ): { targetIds: string[]; announcedAt: number } | null {
     const row = this.db
-      .prepare(`SELECT target_ids_json FROM daily_bounty_targets WHERE guild_id = ? AND bounty_date = ?`)
-      .get(guildId, bountyDate) as { target_ids_json: string } | undefined;
-    if (!row?.target_ids_json) return [];
+      .prepare(
+        `SELECT target_ids_json, announced_at FROM daily_bounty_targets WHERE guild_id = ? AND bounty_date = ?`
+      )
+      .get(guildId, bountyDate) as { target_ids_json: string; announced_at: number } | undefined;
+    if (!row) return null;
+    let targetIds: string[] = [];
     try {
       const j = JSON.parse(row.target_ids_json) as unknown;
-      return Array.isArray(j) ? j.filter((x): x is string => typeof x === "string") : [];
+      if (Array.isArray(j)) targetIds = j.filter((x): x is string => typeof x === "string");
     } catch {
-      return [];
+      targetIds = [];
     }
+    return { targetIds, announcedAt: row.announced_at };
+  }
+
+  /** Bounty marks that have already had their first qualifying snipe today. */
+  listBountyClaimedTargetsForDate(guildId: string, bountyDate: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT bounty_target_id FROM bounty_first_snipes WHERE guild_id = ? AND bounty_date = ?`)
+      .all(guildId, bountyDate) as { bounty_target_id: string }[];
+    return rows.map((r) => r.bounty_target_id);
   }
 
   upsertDailyBountyTargets(guildId: string, bountyDate: string, targetIds: string[], announcedAt: number): void {
