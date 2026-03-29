@@ -33,6 +33,7 @@ import {
   takeDiscordHumanLeaderboardPaged,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
+import { startDiscordBountyScheduler } from "../bountySchedule";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
 import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
@@ -261,6 +262,8 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       playerChanges: result.playerChanges,
       nameOf,
       duelAppend,
+      bountyFirstPairIndices: result.bountyFirstPairIndices,
+      discordBountyHeading: true,
     });
 
     const reply = await args.replyFn(text);
@@ -430,6 +433,12 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       void settleDueDiscordSnipeDuels();
     }, 60_000);
     void settleDueDiscordSnipeDuels();
+
+    startDiscordBountyScheduler({
+      client: c,
+      db,
+      resolveSnipeChannelId: (guildId) => getGuildSnipeChannelId(db, guildId),
+    });
   });
 
   async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction) {

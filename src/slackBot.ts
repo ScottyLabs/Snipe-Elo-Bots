@@ -37,6 +37,7 @@ import {
   parseDurationToMs,
 } from "./snipeDuel";
 import * as L from "./voiceLemuen";
+import { startSlackBountyScheduler } from "./bountySchedule";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
   const lines = text.split("\n");
@@ -1434,6 +1435,9 @@ export async function startSlackBot(params: {
     console.error(`Leaderboard canvas warmup failed (bot is up; first snipe may retry): ${msg}`);
     opsLog("canvas.ensure.startup_failed", { error: msg });
   });
+
+  startSlackBountyScheduler(app.client, params.db, SLACK_GUILD_ID, config.slack.channelId);
+
   opsLog("service.ready", { port: config.server.port, socketMode: useSocketMode });
 }
 

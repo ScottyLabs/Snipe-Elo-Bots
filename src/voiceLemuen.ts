@@ -215,6 +215,48 @@ export function discordSnipeChannelSet(channelRef: string): string {
   return `Understood. This server's snipe lane is now ${channelRef}. I'll keep score there.`;
 }
 
+export function bountyDailyAnnouncementSlack(params: { dateLabel: string; rankedLines: string[] }): string {
+  const lines = params.rankedLines.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  return (
+    `*Daily bounty* — ${params.dateLabel}\n` +
+    `The first time each mark is *sniped* today, that exchange scores *double ELO* (gain and loss both scaled). ` +
+    `If a mark *snipes* someone else, the books use the usual numbers~\n` +
+    lines
+  );
+}
+
+export function bountyDailyAnnouncementDiscord(params: { dateLabel: string; rankedLines: string[] }): string {
+  const lines = params.rankedLines.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  return (
+    `**Daily bounty** — ${params.dateLabel}\n` +
+    `The first time each mark is **sniped** today, that exchange scores **double ELO** (gain and loss both scaled). ` +
+    `If a mark **snipes** someone else, the books use the usual numbers~\n` +
+    lines
+  );
+}
+
+export function bountyDailyNoTargetsSlack(dateLabel: string): string {
+  return `*Daily bounty* — ${dateLabel}\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
+}
+
+export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
+  return `**Daily bounty** — ${dateLabel}\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
+}
+
+/** Snipe confirmation: section heading when daily bounty (2× ELO) applied to one or more pairs. */
+export function snipeConfirmationBountySectionTitle(singleExchange: boolean): string {
+  return singleExchange
+    ? "Daily bounty — 2× ELO on this exchange:"
+    : "Daily bounty — 2× ELO on these exchanges:";
+}
+
+/** Discord snipe confirmation (markdown); same semantics as the Slack/plain block. */
+export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boolean): string {
+  return singleExchange
+    ? "**Daily bounty** — **2× ELO** on this exchange:"
+    : "**Daily bounty** — **2× ELO** on these exchanges:";
+}
+
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
   help: "Open the field manual: commands, rules, and the quick paths.",

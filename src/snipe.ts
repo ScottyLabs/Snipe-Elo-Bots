@@ -1,4 +1,5 @@
 import type { PairMatch, PlayerChange } from "./db";
+import * as L from "./voiceLemuen";
 
 export function formatSigned(n: number): string {
   const s = n >= 0 ? `+${n}` : `${n}`;
@@ -34,8 +35,22 @@ export function formatSnipeConfirmation(params: {
   nameOf: (id: string) => string;
   /** Extra block (e.g. live duel score), appended after standings. */
   duelAppend?: string;
+  /** Pair indices where the *sniped* player was a bounty mark (first snipe on them that day → 2× ELO for that pair). */
+  bountyFirstPairIndices?: number[];
+  /** Discord: bold the bounty heading only (message content markdown). */
+  discordBountyHeading?: boolean;
 }): string {
-  const { sniperId, pairMatches, playerChanges, kind, nameOf, duelAppend } = params;
+  const {
+    sniperId,
+    pairMatches,
+    playerChanges,
+    kind,
+    nameOf,
+    duelAppend,
+    bountyFirstPairIndices,
+    discordBountyHeading,
+  } = params;
+  const bountySet = new Set(bountyFirstPairIndices ?? []);
   const header =
     kind === "makeup"
       ? `Mission accomplished. A makeup snipe is filed under ${nameOf(sniperId)}; the records are thorough, you see.`
@@ -47,15 +62,16 @@ export function formatSnipeConfirmation(params: {
     return `- ${nameOf(m.sniperId)}: ${formatSigned(sniperDelta)}\n  ${nameOf(m.snipedId)}: ${formatSigned(snipedDelta)}`;
   });
 
-  const lines = [
-    header,
-    "",
-    "Exchange of fire:",
-    ...matchLines,
-    "",
-    "Standings—for the moment:",
-    formatPlayerListElo(playerChanges, nameOf),
-  ];
+  const bountyRows = pairMatches.filter((m) => bountySet.has(m.pairIdx));
+
+  const lines: string[] = [header, "", "Exchange of fire:", ...matchLines];
+  if (bountyRows.length > 0) {
+    const bountyTitle = discordBountyHeading
+      ? L.snipeConfirmationBountySectionTitleDiscord(bountyRows.length === 1)
+      : L.snipeConfirmationBountySectionTitle(bountyRows.length === 1);
+    lines.push("", bountyTitle, ...bountyRows.map((m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}`));
+  }
+  lines.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges, nameOf));
   if (duelAppend?.trim()) {
     lines.push("", duelAppend.trim());
   }

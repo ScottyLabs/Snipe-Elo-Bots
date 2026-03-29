@@ -13,7 +13,7 @@ export type SlackUserProfileSnap = {
   deleted: boolean;
 };
 
-type SlackInfoClient = { users: { info: (a: { user: string }) => Promise<unknown> } };
+export type SlackInfoClient = { users: { info: (a: { user: string }) => Promise<unknown> } };
 
 function slackDisplayNameFromUser(
   u: {

@@ -1,4 +1,5 @@
 import type { PairMatch, PlayerChange } from "../db";
+import * as L from "../voiceLemuen";
 
 export function formatSigned(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
@@ -18,8 +19,10 @@ export function formatSnipeConfirmation(params: {
   pairMatches: PairMatch[];
   playerChanges: PlayerChange[];
   kind: "snipe" | "makeup";
+  bountyFirstPairIndices?: number[];
 }): string {
-  const { sniperId, pairMatches, playerChanges, kind } = params;
+  const { sniperId, pairMatches, playerChanges, kind, bountyFirstPairIndices } = params;
+  const bountySet = new Set(bountyFirstPairIndices ?? []);
   const header =
     kind === "makeup"
       ? `Mission accomplished—after a fashion. A makeup snipe is filed under ${mention(sniperId)}; the records are thorough, you see.`
@@ -27,18 +30,20 @@ export function formatSnipeConfirmation(params: {
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
-    return `- ${mention(m.snipedId)}: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}.`;
+    return `- ${mention(m.snipedId)}: sniper ${formatSigned(m.sniperDelta)}, sniped ${formatSigned(snipedDelta)}`;
   });
 
-  return [
-    header,
-    "",
-    "Exchange of fire:",
-    ...matchLines,
-    "",
-    "Standings—for the moment:",
-    formatPlayerListElo(playerChanges),
-  ].join("\n");
+  const bountyRows = pairMatches.filter((m) => bountySet.has(m.pairIdx));
+  const parts: string[] = [header, "", "Exchange of fire:", ...matchLines];
+  if (bountyRows.length > 0) {
+    parts.push(
+      "",
+      L.snipeConfirmationBountySectionTitleDiscord(bountyRows.length === 1),
+      ...bountyRows.map((m) => `- ${mention(m.sniperId)} vs ${mention(m.snipedId)}`)
+    );
+  }
+  parts.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges));
+  return parts.join("\n");
 }
 
 export function formatUndoConfirmation(playerChanges: PlayerChange[]): string {

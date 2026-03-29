@@ -2,6 +2,8 @@ import Database from "better-sqlite3";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { calendarDateKeyInTimeZone } from "./bounty";
+import { bountyEnv } from "./bountyEnv";
 import { eloEnv } from "./eloEnv";
 import { computePairRatingDeltas } from "./elo";
 import { opsLog } from "./opsLog";
@@ -209,6 +211,24 @@ export class EloDb {
       );
       CREATE INDEX IF NOT EXISTS idx_snipe_duels_guild_status_ends ON snipe_duels(guild_id, status, ends_at);
       CREATE INDEX IF NOT EXISTS idx_snipe_duels_root ON snipe_duels(guild_id, root_message_ts);
+
+      CREATE TABLE IF NOT EXISTS daily_bounty_targets(
+        guild_id TEXT NOT NULL,
+        bounty_date TEXT NOT NULL,
+        target_ids_json TEXT NOT NULL,
+        announced_at INTEGER NOT NULL,
+        PRIMARY KEY(guild_id, bounty_date)
+      );
+
+      CREATE TABLE IF NOT EXISTS bounty_first_snipes(
+        guild_id TEXT NOT NULL,
+        bounty_date TEXT NOT NULL,
+        bounty_target_id TEXT NOT NULL,
+        sniper_id TEXT NOT NULL,
+        snipe_id TEXT NOT NULL,
+        PRIMARY KEY(guild_id, bounty_date, bounty_target_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_bounty_first_snipes_snipe ON bounty_first_snipes(snipe_id);
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -338,6 +358,31 @@ export class EloDb {
     return rows.map((r) => r.guild_id);
   }
 
+  getDailyBountyTargets(guildId: string, bountyDate: string): string[] {
+    const row = this.db
+      .prepare(`SELECT target_ids_json FROM daily_bounty_targets WHERE guild_id = ? AND bounty_date = ?`)
+      .get(guildId, bountyDate) as { target_ids_json: string } | undefined;
+    if (!row?.target_ids_json) return [];
+    try {
+      const j = JSON.parse(row.target_ids_json) as unknown;
+      return Array.isArray(j) ? j.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  upsertDailyBountyTargets(guildId: string, bountyDate: string, targetIds: string[], announcedAt: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO daily_bounty_targets(guild_id, bounty_date, target_ids_json, announced_at)
+         VALUES(?,?,?,?)
+         ON CONFLICT(guild_id, bounty_date) DO UPDATE SET
+           target_ids_json = excluded.target_ids_json,
+           announced_at = excluded.announced_at`
+      )
+      .run(guildId, bountyDate, JSON.stringify(targetIds), announcedAt);
+  }
+
   /** Removes rating rows (e.g. bots). Does not delete snipe history. */
   deletePlayersForGuild(guildId: string, playerIds: string[]): number {
     if (playerIds.length === 0) return 0;
@@ -405,6 +450,7 @@ export class EloDb {
     pairMatches: PairMatch[];
     playerChanges: PlayerChange[];
     finalRatings: Map<string, number>;
+    bountyFirstPairIndices: number[];
   } {
     const guildId = args.guildId;
     const now = Date.now();
@@ -419,53 +465,90 @@ export class EloDb {
     this.ensurePlayers(guildId, involvedIds);
 
     const startRatings = this.getRatings(guildId, involvedIds);
-    const currentRatings = new Map(startRatings);
-
-    const pairMatches: PairMatch[] = [];
-
-    for (let i = 0; i < snipedIds.length; i++) {
-      const snipedId = snipedIds[i];
-      const sniperBefore = currentRatings.get(sniperId)!;
-      const snipedBefore = currentRatings.get(snipedId)!;
-
-      const { sniperDelta } = computePairRatingDeltas({
-        sniperRating: sniperBefore,
-        snipedRating: snipedBefore,
-      });
-
-      const sniperAfter = sniperBefore + sniperDelta;
-      const snipedAfter = snipedBefore - sniperDelta;
-
-      currentRatings.set(sniperId, sniperAfter);
-      currentRatings.set(snipedId, snipedAfter);
-
-      pairMatches.push({
-        pairIdx: i,
-        sniperId,
-        snipedId,
-        sniperBefore,
-        sniperAfter,
-        snipedBefore,
-        snipedAfter,
-        sniperDelta,
-      });
-    }
-
-    const playerChanges: PlayerChange[] = [];
-    for (const playerId of involvedIds) {
-      const beforeRating = startRatings.get(playerId)!;
-      const afterRating = currentRatings.get(playerId)!;
-      playerChanges.push({
-        playerId,
-        beforeRating,
-        afterRating,
-        delta: afterRating - beforeRating,
-      });
-    }
-
     const snipedIdsJson = JSON.stringify(snipedIds);
+    const bountyDateKey = calendarDateKeyInTimeZone(now, bountyEnv.timezone);
 
     const tx = this.db.transaction(() => {
+      const row = this.db
+        .prepare(`SELECT target_ids_json FROM daily_bounty_targets WHERE guild_id = ? AND bounty_date = ?`)
+        .get(guildId, bountyDateKey) as { target_ids_json: string } | undefined;
+      let bountyTargets: string[] = [];
+      if (bountyEnv.enabled && row?.target_ids_json) {
+        try {
+          const j = JSON.parse(row.target_ids_json) as unknown;
+          if (Array.isArray(j)) bountyTargets = j.filter((x): x is string => typeof x === "string");
+        } catch {
+          bountyTargets = [];
+        }
+      }
+      const bountyTargetSet = new Set(bountyTargets);
+      const claimStmt = this.db.prepare(
+        `SELECT 1 FROM bounty_first_snipes WHERE guild_id = ? AND bounty_date = ? AND bounty_target_id = ?`
+      );
+      const insertClaim = this.db.prepare(
+        `INSERT INTO bounty_first_snipes(guild_id, bounty_date, bounty_target_id, sniper_id, snipe_id)
+         VALUES(?,?,?,?,?)`
+      );
+
+      const currentRatings = new Map(startRatings);
+      const pairMatches: PairMatch[] = [];
+      const bountyFirstPairIndices: number[] = [];
+
+      for (let i = 0; i < snipedIds.length; i++) {
+        const snipedId = snipedIds[i];
+        const sniperBefore = currentRatings.get(sniperId)!;
+        const snipedBefore = currentRatings.get(snipedId)!;
+
+        const { sniperDelta: baseSniperDelta } = computePairRatingDeltas({
+          sniperRating: sniperBefore,
+          snipedRating: snipedBefore,
+        });
+
+        // Daily bounty: 2× transfer only when the *sniped* player is a listed mark and this is their
+        // first time sniped that calendar day. A mark who *snipes* others uses normal ELO (sniperId is ignored here).
+        const snipedIsBountyMark = bountyTargetSet.has(snipedId);
+        const bountyClaimStillOpen =
+          snipedIsBountyMark && !claimStmt.get(guildId, bountyDateKey, snipedId);
+        let mult = 1;
+        if (bountyEnv.enabled && bountyClaimStillOpen) {
+          mult = 2;
+        }
+        const sniperDelta = baseSniperDelta * mult;
+
+        const sniperAfter = sniperBefore + sniperDelta;
+        const snipedAfter = snipedBefore - sniperDelta;
+
+        currentRatings.set(sniperId, sniperAfter);
+        currentRatings.set(snipedId, snipedAfter);
+
+        pairMatches.push({
+          pairIdx: i,
+          sniperId,
+          snipedId,
+          sniperBefore,
+          sniperAfter,
+          snipedBefore,
+          snipedAfter,
+          sniperDelta,
+        });
+        if (mult === 2) {
+          bountyFirstPairIndices.push(i);
+          insertClaim.run(guildId, bountyDateKey, snipedId, sniperId, snipeId);
+        }
+      }
+
+      const playerChanges: PlayerChange[] = [];
+      for (const playerId of involvedIds) {
+        const beforeRating = startRatings.get(playerId)!;
+        const afterRating = currentRatings.get(playerId)!;
+        playerChanges.push({
+          playerId,
+          beforeRating,
+          afterRating,
+          delta: afterRating - beforeRating,
+        });
+      }
+
       this.db
         .prepare(
           `INSERT INTO snipe_events(
@@ -545,9 +628,11 @@ export class EloDb {
           m.sniperDelta
         );
       }
+
+      return { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices };
     });
 
-    tx();
+    const { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices } = tx();
 
     for (const c of playerChanges) {
       opsLog("elo.change", {
@@ -562,6 +647,16 @@ export class EloDb {
         delta: c.delta,
       });
     }
+    for (const idx of bountyFirstPairIndices) {
+      const snipedId = snipedIds[idx];
+      opsLog("bounty.first_snipe", {
+        guildId,
+        snipeId,
+        bountyDate: bountyDateKey,
+        bountyTargetId: snipedId,
+        sniperId,
+      });
+    }
     opsLog("elo.snipe.commit", {
       guildId,
       snipeId,
@@ -572,9 +667,16 @@ export class EloDb {
       sniperId,
       snipedIds,
       pairCount: pairMatches.length,
+      bountyPairs: bountyFirstPairIndices.length,
     });
 
-    return { snipeId, pairMatches, playerChanges, finalRatings: currentRatings };
+    return {
+      snipeId,
+      pairMatches,
+      playerChanges,
+      finalRatings: currentRatings,
+      bountyFirstPairIndices,
+    };
   }
 
   getUndoableSnipeByConfirmationMessageId(guildId: string, confirmationMessageId: string): SnipeEventRow | null {
@@ -758,6 +860,8 @@ export class EloDb {
       this.db
         .prepare(`UPDATE snipe_events SET undone_at = ? WHERE snipe_id = ? AND guild_id = ?`)
         .run(now, args.snipeIdToUndo, guildId);
+
+      this.db.prepare(`DELETE FROM bounty_first_snipes WHERE snipe_id = ?`).run(args.snipeIdToUndo);
 
       this.db
         .prepare(
