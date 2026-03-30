@@ -3,7 +3,7 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 import type { EloDb } from "./db";
-import { resolveDiscordDisplayNames } from "./discordDisplayNames";
+import { filterDiscordGraphHumanPlayerIds, resolveDiscordDisplayNames } from "./discordDisplayNames";
 import { collectIdsFromDirectedPairs } from "./headToHead";
 import { opsLog } from "./opsLog";
 import { SNIPES_LOG_LIMIT, buildSnipesApiPayload, collectIdsForSnipeLog } from "./snipeHistory";
@@ -98,6 +98,8 @@ export type GraphHttpPlatformContext = {
   guildDisplayName: (guildId: string) => Promise<string>;
   resolveDisplayNamesForGuild: (guildId: string, userIds: string[]) => Promise<Map<string, string>>;
   isGuildResolvableForPlayerPanel: (guildId: string) => Promise<boolean>;
+  /** Player IDs to keep in the snipe graph (exclude bots / non-humans). */
+  filterGraphHumanPlayerIds: (guildId: string, userIds: string[]) => Promise<Set<string>>;
 };
 
 export async function handleGraphSiteRequest(
@@ -182,7 +184,10 @@ export async function handleGraphSiteRequest(
         return;
       }
       const guildName = await ctx.guildDisplayName(guildId);
-      const rows = db.getDirectedSnipePairCounts(guildId);
+      const rowsAll = db.getDirectedSnipePairCounts(guildId);
+      const idsAll = collectIdsFromDirectedPairs(rowsAll);
+      const humanIds = await ctx.filterGraphHumanPlayerIds(guildId, idsAll);
+      const rows = rowsAll.filter((r) => humanIds.has(r.sniperId) && humanIds.has(r.snipedId));
       const pairIds = collectIdsFromDirectedPairs(rows);
       const ratings = db.getRatings(guildId, pairIds);
       const nameMap =
@@ -242,6 +247,11 @@ export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Se
       return guild && userIds.length > 0 ? resolveDiscordDisplayNames(guild, userIds) : new Map();
     },
     isGuildResolvableForPlayerPanel: async (guildId) => Boolean(await getGuild(guildId)),
+    filterGraphHumanPlayerIds: async (guildId, userIds) => {
+      const guild = await getGuild(guildId);
+      if (!guild || userIds.length === 0) return new Set(userIds);
+      return filterDiscordGraphHumanPlayerIds(guild, userIds);
+    },
   };
 
   const server = http.createServer(async (req, res) => {

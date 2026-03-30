@@ -54,6 +54,17 @@ export async function resolveDiscordDisplayNames(guild: Guild, userIds: string[]
   return out;
 }
 
+/** IDs that are non-bot Discord users (for graph / analytics). */
+export async function filterDiscordGraphHumanPlayerIds(guild: Guild, userIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(userIds)].filter(Boolean);
+  const out = new Set<string>();
+  for (const id of unique) {
+    const e = await getDiscordUserEntryCached(guild, id);
+    if (!e.isBot) out.add(id);
+  }
+  return out;
+}
+
 /** Rating-sorted humans up to `maxHumans` (for pagination). */
 export async function takeDiscordHumanLeaderboardPaged(
   guild: Guild,

@@ -92,6 +92,17 @@ export async function resolveSlackDisplayNames(client: SlackInfoClient, userIds:
   return out;
 }
 
+/** IDs that are non-bot, non-deleted Slack users (for graph / analytics). */
+export async function filterSlackGraphHumanPlayerIds(client: SlackInfoClient, userIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(userIds)].filter(Boolean);
+  const out = new Set<string>();
+  for (const id of unique) {
+    const snap = await getSlackUserProfileCached(client, id);
+    if (snap && !snap.isBot && !snap.deleted) out.add(id);
+  }
+  return out;
+}
+
 /** Walk rating-sorted players; skip bots and deleted until `maxHumans` humans collected (for pagination). */
 export async function takeSlackHumanLeaderboardPaged(
   client: SlackInfoClient,

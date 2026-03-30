@@ -3,7 +3,7 @@ import type { WebClient } from "@slack/web-api";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EloDb } from "./db";
 import { handleGraphSiteRequest, type GraphHttpPlatformContext } from "./graphHttpServer";
-import { resolveSlackDisplayNames } from "./slackDisplayNames";
+import { filterSlackGraphHumanPlayerIds, resolveSlackDisplayNames } from "./slackDisplayNames";
 
 function safeEndJsonError(res: ServerResponse, status: number, body: unknown): void {
   if (res.writableEnded) return;
@@ -55,6 +55,8 @@ export function slackGraphBoltCustomRoutes(args: {
     resolveDisplayNamesForGuild: async (_guildId, userIds) =>
       resolveSlackDisplayNames(args.getClient(), userIds),
     isGuildResolvableForPlayerPanel: async () => true,
+    filterGraphHumanPlayerIds: async (_guildId, userIds) =>
+      filterSlackGraphHumanPlayerIds(args.getClient(), userIds),
   });
 
   const runSite = attachGraphHandler(makeCtx, handleGraphSiteRequest);
