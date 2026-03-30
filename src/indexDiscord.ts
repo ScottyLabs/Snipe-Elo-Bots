@@ -26,6 +26,17 @@ async function main() {
   const db = new EloDb(discordConfig.dbPath, {
     tenantIdForLegacyMigration: discordConfig.tenantIdForLegacyMigration,
   });
+  const shutdown = (signal: NodeJS.Signals) => {
+    try {
+      console.log(`[snipe-elo-discord] shutdown ${signal}`);
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
   await startDiscordBot(db);
 }
 

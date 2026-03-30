@@ -9,6 +9,17 @@ async function main() {
     dbPath: config.storage.dbPath,
   });
   const db = new EloDb(config.storage.dbPath);
+  const shutdown = (signal: NodeJS.Signals) => {
+    try {
+      opsLog("service.shutdown", { signal });
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
   await startSlackBot({ db });
 }
 

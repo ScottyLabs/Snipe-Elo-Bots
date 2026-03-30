@@ -54,7 +54,8 @@ export function startSlackBountyScheduler(
   if (!bountyEnv.enabled) return;
 
   const dk = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
-  let lastAnnouncedDateKey: string | null = db.getDailyBountyTargets(guildId, dk).length > 0 ? dk : null;
+  let lastAnnouncedDateKey: string | null =
+    db.getDailyBountyAnnouncementRow(guildId, dk) !== null ? dk : null;
 
   const tick = async () => {
     if (!bountyEnv.enabled) return;
@@ -73,7 +74,8 @@ export function startSlackBountyScheduler(
       }
       return;
     }
-    if (db.getDailyBountyTargets(guildId, dateKey).length === 0) {
+    /* Only when no DB row yet—empty target list for today is still a stored day (do not re-announce every minute). */
+    if (db.getDailyBountyAnnouncementRow(guildId, dateKey) === null) {
       try {
         await announceSlackBountyForDate(client, db, guildId, channelId, dateKey);
         lastAnnouncedDateKey = dateKey;
@@ -136,7 +138,7 @@ export function startDiscordBountyScheduler(args: {
       if (!channelId) continue;
       lastAnnouncedByGuild.set(
         guild.id,
-        db.getDailyBountyTargets(guild.id, dk).length > 0 ? dk : null
+        db.getDailyBountyAnnouncementRow(guild.id, dk) !== null ? dk : null
       );
     }
   };
@@ -154,7 +156,7 @@ export function startDiscordBountyScheduler(args: {
 
       let last = lastAnnouncedByGuild.get(guild.id);
       if (last === undefined) {
-        last = db.getDailyBountyTargets(guild.id, dateKey).length > 0 ? dateKey : null;
+        last = db.getDailyBountyAnnouncementRow(guild.id, dateKey) !== null ? dateKey : null;
         lastAnnouncedByGuild.set(guild.id, last);
       }
 
@@ -171,7 +173,7 @@ export function startDiscordBountyScheduler(args: {
         }
         continue;
       }
-      if (db.getDailyBountyTargets(guild.id, dateKey).length === 0) {
+      if (db.getDailyBountyAnnouncementRow(guild.id, dateKey) === null) {
         try {
           await announceDiscordBountyForGuild(client, db, guild.id, channelId, dateKey);
           lastAnnouncedByGuild.set(guild.id, dateKey);

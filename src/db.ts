@@ -127,9 +127,12 @@ export type EloDbOptions = {
 export class EloDb {
   private db: Database.Database;
   private readonly tenantIdForLegacyMigration: string;
+  private readonly isMemoryDb: boolean;
+  private closed = false;
 
   constructor(dbPath: string, opts?: EloDbOptions) {
     this.tenantIdForLegacyMigration = opts?.tenantIdForLegacyMigration ?? SLACK_GUILD_ID;
+    this.isMemoryDb = !dbPath || dbPath === ":memory:";
     let openPath = dbPath;
     if (dbPath && dbPath !== ":memory:") {
       openPath = path.resolve(dbPath);
@@ -212,6 +215,7 @@ export class EloDb {
       CREATE INDEX IF NOT EXISTS idx_snipe_duels_guild_status_ends ON snipe_duels(guild_id, status, ends_at);
       CREATE INDEX IF NOT EXISTS idx_snipe_duels_root ON snipe_duels(guild_id, root_message_ts);
 
+      /* Bounty state lives in this file with the rest of ELO; keep DB_PATH / DISCORD_DB_PATH on a persistent volume across deploys. */
       CREATE TABLE IF NOT EXISTS daily_bounty_targets(
         guild_id TEXT NOT NULL,
         bounty_date TEXT NOT NULL,
@@ -402,6 +406,7 @@ export class EloDb {
            announced_at = excluded.announced_at`
       )
       .run(guildId, bountyDate, JSON.stringify(targetIds), announcedAt);
+    this.checkpoint();
   }
 
   /** Removes rating rows (e.g. bots). Does not delete snipe history. */
@@ -654,6 +659,9 @@ export class EloDb {
     });
 
     const { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices } = tx();
+    if (bountyFirstPairIndices.length > 0) {
+      this.checkpoint();
+    }
 
     for (const c of playerChanges) {
       opsLog("elo.change", {
@@ -950,6 +958,8 @@ export class EloDb {
     });
 
     const undoPlayerChanges = tx() as PlayerChange[];
+    this.checkpoint();
+
     for (const c of undoPlayerChanges) {
       opsLog("elo.change", {
         guildId,
@@ -1121,5 +1131,30 @@ export class EloDb {
       )
       .get(guildId, sniperId, snipedId, sinceMs, untilMs) as { c: number } | undefined;
     return row?.c ?? 0;
+  }
+
+  /**
+   * Merge WAL into the main database file (best-effort). Helps bounty/ELO survive restarts when the
+   * host copies only the `.sqlite3` file, and pairs with close() on graceful shutdown.
+   */
+  checkpoint(): void {
+    if (this.isMemoryDb || this.closed) return;
+    try {
+      this.db.pragma("wal_checkpoint(TRUNCATE)");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** WAL checkpoint then close. Idempotent. */
+  close(): void {
+    if (this.closed) return;
+    this.checkpoint();
+    try {
+      this.db.close();
+    } catch {
+      /* ignore */
+    }
+    this.closed = true;
   }
 }
