@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snipe graph — local demo (vis-network)</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  </head>
+  <body>
+    <div class="page-bg" aria-hidden="true"></div>
+    <div class="hud" style="left: 12px; right: auto">
+      <span style="font-size: 0.8rem; opacity: 0.85; align-self: center; max-width: min(320px, 70vw)"
+        >Demo data only — drag nodes, scroll/pinch to zoom, drag background to pan.</span
+      >
+    </div>
+    <div id="graphMount"></div>
+    <script>
+      /* global vis */
+      var visOpts = {
+        physics: {
+          enabled: true,
+          solver: "forceAtlas2Based",
+          forceAtlas2Based: {
+            gravitationalConstant: -130,
+            centralGravity: 0.008,
+            springLength: 260,
+            springConstant: 0.032,
+            avoidOverlap: 1,
+            damping: 0.55,
+          },
+          stabilization: { iterations: 280, updateInterval: 25 },
+          maxVelocity: 24,
+          minVelocity: 0.6,
+          timestep: 0.48,
+        },
+        interaction: {
+          hover: true,
+          multiselect: false,
+          dragNodes: true,
+          dragView: true,
+          zoomView: true,
+        },
+        nodes: {
+          shape: "circle",
+          font: { color: "#ffffff", size: 15, face: "Segoe UI, system-ui, sans-serif" },
+          borderWidth: 2,
+          shadow: { enabled: true, color: "rgba(0,229,255,0.35)", size: 12 },
+        },
+        edges: {
+          arrows: { to: { enabled: true, scaleFactor: 0.65 } },
+          color: { color: "rgba(255,255,255,0.32)", highlight: "#00E5FF", hover: "#FF00AA" },
+          font: { color: "#E8ECFF", size: 11, strokeWidth: 0, align: "middle" },
+          smooth: { type: "continuous", roundness: 0.35 },
+        },
+      };
+
+      var nodes = new vis.DataSet([
+        { id: "1", label: "Ada", title: "Ada\nELO 1120", color: { background: "#00E5FF", border: "#7C4DFF" } },
+        { id: "2", label: "Ben", title: "Ben\nELO 1088", color: { background: "#FF00AA", border: "#00E5FF" } },
+        { id: "3", label: "Chen", title: "Chen\nELO 1040", color: { background: "#00E5FF", border: "#7C4DFF" } },
+        { id: "4", label: "Dana", title: "Dana\nELO 1010\n2nd · Silver", color: { background: "#E8E8E8", border: "#708090" } },
+        { id: "5", label: "Eli", title: "Eli\nELO 990", color: { background: "#FF00AA", border: "#00E5FF" } },
+      ]);
+      var edges = new vis.DataSet([
+        { id: "e1", from: "1", to: "2", label: "3", title: "3 snipe(s)" },
+        { id: "e2", from: "2", to: "3", label: "1", title: "1 snipe(s)" },
+        { id: "e3", from: "1", to: "4", label: "2", title: "2 snipe(s)" },
+        { id: "e4", from: "4", to: "5", label: "4", title: "4 snipe(s)" },
+        { id: "e5", from: "3", to: "5", label: "1", title: "1 snipe(s)" },
+      ]);
+
+      var mount = document.getElementById("graphMount");
+      var network = new vis.Network(mount, { nodes: nodes, edges: edges }, visOpts);
+    </script>
+  </body>
+</html>

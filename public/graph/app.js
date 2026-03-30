@@ -1,25 +1,19 @@
 /* global vis */
 const TOKEN_KEY = "snipeGraphToken";
 
-function weaklyConnectedNodeSet(nodeIds, directedEdges, focusId) {
+/**
+ * Focal node plus anyone with a direct snipe edge to/from them (either direction).
+ * Other players are hidden when a node is selected.
+ */
+function directEgoNetworkNodeSet(nodeIds, directedEdges, focusId) {
   if (!nodeIds.has(focusId)) return new Set();
-  const adj = new Map();
+  const keep = new Set([focusId]);
   for (const e of directedEdges) {
     if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) continue;
-    if (!adj.has(e.from)) adj.set(e.from, new Set());
-    if (!adj.has(e.to)) adj.set(e.to, new Set());
-    adj.get(e.from).add(e.to);
-    adj.get(e.to).add(e.from);
+    if (e.from === focusId) keep.add(e.to);
+    else if (e.to === focusId) keep.add(e.from);
   }
-  const seen = new Set();
-  const stack = [focusId];
-  while (stack.length) {
-    const v = stack.pop();
-    if (seen.has(v)) continue;
-    seen.add(v);
-    for (const w of [...(adj.get(v) || [])]) stack.push(w);
-  }
-  return seen;
+  return keep;
 }
 
 let network = null;
@@ -32,16 +26,30 @@ const visOpts = {
     enabled: true,
     solver: "forceAtlas2Based",
     forceAtlas2Based: {
-      gravitationalConstant: -90,
-      centralGravity: 0.01,
-      springLength: 240,
-      springConstant: 0.038,
-      avoidOverlap: 0.9,
+      /** More negative ⇒ stronger repulsion between nodes (keeps them apart when close). */
+      gravitationalConstant: -130,
+      centralGravity: 0.008,
+      springLength: 260,
+      springConstant: 0.032,
+      /** 1 = strongest overlap avoidance in this solver. */
+      avoidOverlap: 1,
+      damping: 0.55,
     },
-    stabilization: { iterations: 220, updateInterval: 25 },
+    stabilization: { iterations: 280, updateInterval: 25 },
+    maxVelocity: 24,
+    minVelocity: 0.6,
+    timestep: 0.48,
   },
-  interaction: { hover: true, multiselect: false },
+  interaction: {
+    hover: true,
+    multiselect: false,
+    dragNodes: true,
+    dragView: true,
+    zoomView: true,
+    selectConnectedEdges: false,
+  },
   nodes: {
+    shape: "circle",
     font: { color: "#ffffff", size: 15, face: "Segoe UI, system-ui, sans-serif" },
     borderWidth: 2,
     shadow: { enabled: true, color: "rgba(0,229,255,0.35)", size: 12 },
@@ -69,7 +77,7 @@ function nodeColor(idx) {
     : { bg: "#FF00AA", border: "#00E5FF" };
 }
 
-/** Classic medal tones (readable on dark mesh background). */
+/** Classic medal tones (readable on solid dark background). */
 var MEDAL_STYLES = {
   1: { bg: "#FFD700", border: "#B8860B", hint: "1st · Gold", labelColor: "#1a1206" },
   2: { bg: "#E8E8E8", border: "#708090", hint: "2nd · Silver", labelColor: "#1a1a22" },
@@ -110,27 +118,21 @@ function buildVisData(nodes, edges) {
 function applyGraphSubset(focusId) {
   if (!network || !fullNodes.length) return;
   const nodeIdSet = new Set(fullNodes.map((n) => n.id));
-  const keep = weaklyConnectedNodeSet(nodeIdSet, fullEdges, focusId);
+  const keep = directEgoNetworkNodeSet(nodeIdSet, fullEdges, focusId);
   const subNodes = fullNodes.filter((n) => keep.has(n.id));
   const subEdges = fullEdges.filter((e) => keep.has(e.from) && keep.has(e.to));
   const data = buildVisData(subNodes, subEdges);
   network.setData(data);
-  network.stabilize();
   network.setOptions({ physics: { enabled: true } });
-  network.once("stabilizationIterationsDone", function () {
-    network.setOptions({ physics: { enabled: false } });
-  });
+  network.stabilize();
 }
 
 function showFullGraph() {
   if (!network) return;
   const data = buildVisData(fullNodes, fullEdges);
   network.setData(data);
-  network.stabilize();
   network.setOptions({ physics: { enabled: true } });
-  network.once("stabilizationIterationsDone", function () {
-    network.setOptions({ physics: { enabled: false } });
-  });
+  network.stabilize();
   document.getElementById("panel").classList.add("hidden");
   document.getElementById("resetViewBtn").classList.add("hidden");
 }
@@ -261,9 +263,6 @@ async function loadGraph() {
   const visData = buildVisData(fullNodes, fullEdges);
   network = new vis.Network(mount, visData, visOpts);
   network.on("click", onNodeClick);
-  network.once("stabilizationIterationsDone", function () {
-    network.setOptions({ physics: { enabled: false } });
-  });
 }
 
 async function redeem() {

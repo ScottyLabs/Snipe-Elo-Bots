@@ -2,10 +2,9 @@
   --neon-cyan: #00e5ff;
   --neon-magenta: #ff00aa;
   --deep-blue: #1a237e;
-  --hot-red: #ff0033;
-  --pale: #d1d9e6;
-  --text: #f4f6ff;
-  --panel-bg: rgba(13, 12, 35, 0.82);
+  --page-bg: #1a1d26;
+  --text: #e8eaf0;
+  --panel-bg: rgba(28, 31, 40, 0.94);
   --edge: rgba(255, 255, 255, 0.28);
 }
 
@@ -20,24 +19,24 @@ body {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   color: var(--text);
   overflow: hidden;
+  background: var(--page-bg);
 }
 
-/* Mesh-style backdrop inspired by brand gradient */
-.mesh-bg {
+/* Solid backdrop (vis-network canvas is transparent; this shows through). */
+.page-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: radial-gradient(ellipse 100% 80% at 0% 0%, var(--hot-red) 0%, transparent 55%),
-    radial-gradient(ellipse 90% 85% at 100% 0%, var(--neon-cyan) 0%, transparent 52%),
-    radial-gradient(ellipse 75% 70% at 0% 100%, var(--pale) 0%, transparent 48%),
-    radial-gradient(ellipse 95% 90% at 100% 100%, var(--deep-blue) 0%, transparent 55%),
-    linear-gradient(145deg, #12081f 0%, #0d1538 40%, #1a0a3a 100%);
+  background: var(--page-bg);
+  pointer-events: none;
 }
 
 #graphMount {
   position: fixed;
   inset: 0;
   z-index: 1;
+  background: var(--page-bg);
+  touch-action: none;
 }
 
 .overlay {
