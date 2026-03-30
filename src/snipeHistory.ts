@@ -104,6 +104,35 @@ export function formatDiscordSnipesList(
   return lines.join("\n");
 }
 
+export type SnipeLogLineApi = {
+  at: string;
+  kind: string;
+  undone: boolean;
+  snipedNames?: string[];
+  sniperName?: string;
+};
+
+/** Structured payload for the snipe graph viewer (same underlying rows as /snipes). */
+export function buildSnipesApiPayload(
+  asSniper: SnipeEventRow[],
+  asSniped: SnipeReceivedRow[],
+  nameOf: (id: string) => string
+): { asSniper: SnipeLogLineApi[]; asSniped: SnipeLogLineApi[] } {
+  const asSniperLines: SnipeLogLineApi[] = asSniper.map((row) => ({
+    at: formatSnipeHistoryTimestamp(row.createdAt),
+    kind: row.type === "makeup" ? "makeup" : "snipe",
+    undone: row.undoneAt != null,
+    snipedNames: parseSnipedIdsFromEvent(row).map((id) => nameOf(id)),
+  }));
+  const asSnipedLines: SnipeLogLineApi[] = asSniped.map((row) => ({
+    at: formatSnipeHistoryTimestamp(row.createdAt),
+    kind: row.type === "makeup" ? "makeup" : "snipe",
+    undone: row.undoneAt != null,
+    sniperName: nameOf(row.sniperId),
+  }));
+  return { asSniper: asSniperLines, asSniped: asSnipedLines };
+}
+
 export function formatSlackSnipesList(
   asSniper: SnipeEventRow[],
   asSniped: SnipeReceivedRow[],

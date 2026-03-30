@@ -56,4 +56,6 @@ export const discordConfig = {
   leaderboardTopN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
   leaderboardPageSize: Math.max(3, Number(process.env.LEADERBOARD_PAGE_SIZE ?? 12)),
   leaderboardTitle: process.env.LEADERBOARD_TITLE ?? "ELO Leaderboard",
+  /** Public base URL for the snipe graph site (no trailing slash), e.g. https://your-app.up.railway.app */
+  graphPublicBaseUrl: (process.env.GRAPH_PUBLIC_BASE_URL ?? "").replace(/\/$/, ""),
 };

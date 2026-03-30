@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snipe graph</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  </head>
+  <body>
+    <div class="mesh-bg" aria-hidden="true"></div>
+
+    <div id="loginOverlay" class="overlay">
+      <div class="card">
+        <div class="brand-row">
+          <img src="logo.png" alt="" width="48" height="48" onerror="this.style.display='none'" />
+          <div>
+            <h1>Snipe graph</h1>
+            <p class="muted">Enter the code from <code>/snipegraph</code> within one minute.</p>
+          </div>
+        </div>
+        <div class="input-row">
+          <input id="codeInput" type="text" maxlength="32" placeholder="Access code" autocomplete="one-time-code" />
+          <button type="button" id="unlockBtn">Unlock</button>
+        </div>
+        <div id="loginErr" class="err"></div>
+      </div>
+    </div>
+
+    <div id="panel" class="panel hidden" aria-live="polite"></div>
+    <div class="hud">
+      <button type="button" id="resetViewBtn" class="secondary hidden">Full graph</button>
+      <button type="button" id="logoutBtn" class="secondary hidden">Lock</button>
+    </div>
+    <div id="graphMount"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

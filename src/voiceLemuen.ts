@@ -325,6 +325,27 @@ export function bountySlashFooter(platform: "slack" | "discord"): string {
   return "*Marks who snipe others use normal ELO—only being sniped as a mark can trigger 2×.*";
 }
 
+export function graphViewerNotConfigured(): string {
+  return `The graph viewer isn't wired yet—set GRAPH_PUBLIC_BASE_URL on the host to your Railway URL (no trailing slash), if you please.`;
+}
+
+export function graphCodeEphemeral(params: { code: string; siteUrl: string; redeemSeconds: number }): string {
+  return (
+    `Here's your one-time code for the snipe graph: **${params.code}**\n` +
+    `Enter it on the site within **${params.redeemSeconds} seconds** (you'll get a longer session once it accepts).\n` +
+    `${params.siteUrl}\n`
+  );
+}
+
+/** Slack mrkdwn (slash / ephemeral); avoids Discord-style **bold**. */
+export function graphCodeEphemeralSlack(params: { code: string; siteUrl: string; redeemSeconds: number }): string {
+  return (
+    `Here's your one-time code for the snipe graph: *${params.code}*\n` +
+    `Enter it on the site within *${params.redeemSeconds} seconds* (you'll get a longer session once it accepts).\n` +
+    `${params.siteUrl}\n`
+  );
+}
+
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
   help: "Open the field manual: commands, rules, and the quick paths.",
@@ -338,4 +359,5 @@ export const discordSlashDescriptions = {
   headtohead: "Pairwise snipe counts for everyone still on the books.",
   snipeduel: "Challenge someone to a timed snipe duel with an ELO stake.",
   bounty: "Today's bounty marks and whether each 2× reward is still open.",
+  snipegraph: "Get a 1-minute code to open the live snipe graph for this server in the browser.",
 } as const;

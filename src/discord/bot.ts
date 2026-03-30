@@ -174,6 +174,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "• `/snipes [player]` — latest snipes as shooter and as target.",
     "• `/headtohead` — head-to-head matrix image (active records only).",
     "• `/bounty` — today's bounty marks and whether each 2× reward is still open.",
+    "• `/snipegraph` — one-time code (1 min) to open the snipe network graph in the browser (`GRAPH_PUBLIC_BASE_URL` on the host).",
     "",
     "**Scoring / moderation**",
     "• `/makeupsnipe <sniper> <sniped...>` — log a snipe that missed camera.",
@@ -188,7 +189,12 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
   ].join("\n");
 }
 
-export async function startDiscordBot(db: EloDb): Promise<void> {
+export type DiscordBotOptions = {
+  /** Fires after slash commands, duels scheduler, etc. are wired (same tick as ClientReady handler end). */
+  onReady?: (client: Client) => void;
+};
+
+export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): Promise<void> {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -319,6 +325,9 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         .setName("bounty")
         .setDescription(L.discordSlashDescriptions.bounty),
       new SlashCommandBuilder()
+        .setName("snipegraph")
+        .setDescription(L.discordSlashDescriptions.snipegraph),
+      new SlashCommandBuilder()
         .setName("removesnipe")
         .setDescription(L.discordSlashDescriptions.removesnipe)
         .addStringOption((o) =>
@@ -446,6 +455,8 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
       db,
       resolveSnipeChannelId: (guildId) => getGuildSnipeChannelId(db, guildId),
     });
+
+    options?.onReady?.(c);
   });
 
   async function replyDiscordLeaderboard(interaction: ChatInputCommandInteraction) {
@@ -519,6 +530,30 @@ export async function startDiscordBot(db: EloDb): Promise<void> {
         const msg = e instanceof Error ? e.message : String(e);
         await interaction.editReply({ content: L.snipesFailed(msg) });
       }
+      return;
+    }
+
+    if (interaction.commandName === "snipegraph") {
+      if (!interaction.guild) {
+        await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+      const base = discordConfig.graphPublicBaseUrl;
+      if (!base) {
+        await interaction.reply({ content: L.graphViewerNotConfigured(), ephemeral: true });
+        return;
+      }
+      const { code, expiresAtMs } = db.issueGraphPasscode(interaction.guild.id);
+      const siteUrl = `${base}/graph/`;
+      const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
+      await interaction.reply({
+        content: L.graphCodeEphemeral({ code, siteUrl, redeemSeconds }),
+        ephemeral: true,
+      });
+      opsLog("discord.snipegraph", {
+        guildId: interaction.guild.id,
+        userId: interaction.user.id,
+      });
       return;
     }
 

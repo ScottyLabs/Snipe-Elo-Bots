@@ -41,6 +41,7 @@ import { calendarDateKeyInTimeZone } from "./bounty";
 import { bountyEnv } from "./bountyEnv";
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
+import { slackGraphBoltCustomRoutes } from "./graphBoltRoutes";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
   const lines = text.split("\n");
@@ -242,6 +243,7 @@ function formatSlackHelpText(): string {
     "*Core commands*",
     `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard (paged; use Prev/Next in the message).`,
     `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,
+    `• \`${c.slashSnipegraph}\` — one-time code to open the snipe network graph in the browser (\`GRAPH_PUBLIC_BASE_URL\` on the host).`,
     `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
     `• \`${c.slashBounty}\` — today's bounty marks and whether each 2× slot is still open.`,
     "",
@@ -348,6 +350,7 @@ export async function startSlackBot(params: {
     }`
   );
 
+  let slackGraphWebClient: import("@slack/web-api").WebClient | undefined;
   const app = new App({
     token: config.slack.botToken,
     signingSecret: config.slack.signingSecret,
@@ -355,8 +358,20 @@ export async function startSlackBot(params: {
     appToken,
     // For HTTP mode (non-socket-mode).
     port: config.server.port,
-    customRoutes: railwayHealthRoutes,
+    customRoutes: [
+      ...railwayHealthRoutes,
+      ...slackGraphBoltCustomRoutes({
+        db: params.db,
+        getClient: () => {
+          if (!slackGraphWebClient) {
+            throw new Error("graph HTTP route before Slack App client was ready");
+          }
+          return slackGraphWebClient;
+        },
+      }),
+    ],
   });
+  slackGraphWebClient = app.client;
 
   const logger = params.logger ?? console;
 
@@ -653,6 +668,23 @@ export async function startSlackBot(params: {
       await respond({ response_type: "ephemeral", text: L.snipesFailed(msg) });
     }
   };
+
+  app.command(config.slackOps.slashSnipegraph, async ({ command, ack, respond }) => {
+    await ack();
+    const base = config.slack.graphPublicBaseUrl;
+    if (!base) {
+      await respond({ response_type: "ephemeral", text: L.graphViewerNotConfigured() });
+      return;
+    }
+    const { code, expiresAtMs } = params.db.issueGraphPasscode(SLACK_GUILD_ID);
+    const siteUrl = `${base}/graph/`;
+    const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
+    await respond({
+      response_type: "ephemeral",
+      text: L.graphCodeEphemeralSlack({ code, siteUrl, redeemSeconds }),
+    });
+    opsLog("slack.snipegraph", { userId: command.user_id });
+  });
 
   app.command(config.slackOps.slashSnipes, async ({ command, ack, respond, client }) => {
     await ack();
@@ -967,7 +999,7 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
   );
 
   const plainCmd = {
@@ -975,6 +1007,7 @@ export async function startSlackBot(params: {
     leaderboard: plainSlackCmd(config.slackOps.slashLeaderboard),
     showLeaderboard: plainSlackCmd(config.slackOps.slashShowLeaderboard),
     snipes: plainSlackCmd(config.slackOps.slashSnipes),
+    snipegraph: plainSlackCmd(config.slackOps.slashSnipegraph),
     headtohead: plainSlackCmd(config.slackOps.slashHeadtohead),
     bounty: plainSlackCmd(config.slackOps.slashBounty),
     undo: plainSlackCmd(config.slackOps.slashUndo),
@@ -985,7 +1018,7 @@ export async function startSlackBot(params: {
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1163,6 +1196,20 @@ export async function startSlackBot(params: {
             const msg = e instanceof Error ? e.message : String(e);
             await postEphemeral(L.snipesFailed(msg));
           }
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.snipegraph)) {
+          const base = config.slack.graphPublicBaseUrl;
+          if (!base) {
+            await postEphemeral(L.graphViewerNotConfigured());
+            return;
+          }
+          const { code, expiresAtMs } = params.db.issueGraphPasscode(SLACK_GUILD_ID);
+          const siteUrl = `${base}/graph/`;
+          const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
+          await postEphemeral(L.graphCodeEphemeralSlack({ code, siteUrl, redeemSeconds }));
+          opsLog("command.text.snipegraph", { userId, channelId });
           return;
         }
 

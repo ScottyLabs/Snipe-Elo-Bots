@@ -20,6 +20,8 @@ export const config = {
     channelId: requireEnv("SLACK_CHANNEL_ID"),
     // If set, bot will run in Socket Mode.
     appToken: process.env.SLACK_APP_TOKEN,
+    /** Public origin for the graph viewer (same host as Slack HTTP/Socket auxiliary server). No trailing slash. */
+    graphPublicBaseUrl: (process.env.GRAPH_PUBLIC_BASE_URL ?? "").replace(/\/$/, ""),
   },
   elo: eloEnv,
   leaderboard: {
@@ -42,6 +44,7 @@ export const config = {
     slashLeaderboard: normalizeSlashCommand(process.env.SLACK_LEADERBOARD_COMMAND, "leaderboard"),
     slashShowLeaderboard: normalizeSlashCommand(process.env.SLACK_SHOW_LEADERBOARD_COMMAND, "show_leaderboard"),
     slashSnipes: normalizeSlashCommand(process.env.SLACK_SNIPES_COMMAND, "snipes"),
+    slashSnipegraph: normalizeSlashCommand(process.env.SLACK_SNIPEGRAPH_COMMAND, "snipegraph"),
     slashHeadtohead: normalizeSlashCommand(process.env.SLACK_HEADTOHEAD_COMMAND, "headtohead"),
     slashHelp: normalizeSlashCommand(process.env.SLACK_HELP_COMMAND, "help"),
     slashSnipeDuel: normalizeSlashCommand(process.env.SLACK_SNIPEDUEL_COMMAND, "snipeduel"),

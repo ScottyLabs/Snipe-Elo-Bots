@@ -233,6 +233,20 @@ export class EloDb {
         PRIMARY KEY(guild_id, bounty_date, bounty_target_id)
       );
       CREATE INDEX IF NOT EXISTS idx_bounty_first_snipes_snipe ON bounty_first_snipes(snipe_id);
+
+      CREATE TABLE IF NOT EXISTS graph_passcodes(
+        code TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_graph_passcodes_expires ON graph_passcodes(expires_at);
+
+      CREATE TABLE IF NOT EXISTS graph_sessions(
+        token TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_graph_sessions_expires ON graph_sessions(expires_at);
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -1131,6 +1145,68 @@ export class EloDb {
       )
       .get(guildId, sniperId, snipedId, sinceMs, untilMs) as { c: number } | undefined;
     return row?.c ?? 0;
+  }
+
+  purgeExpiredGraphRows(): void {
+    const now = Date.now();
+    this.db.prepare(`DELETE FROM graph_passcodes WHERE expires_at < ?`).run(now);
+    this.db.prepare(`DELETE FROM graph_sessions WHERE expires_at < ?`).run(now);
+  }
+
+  /** One-time view code for the snipe graph website; valid ~60s until redeem. */
+  issueGraphPasscode(guildId: string): { code: string; expiresAtMs: number } {
+    this.purgeExpiredGraphRows();
+    for (let i = 0; i < 8; i++) {
+      const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+      const expiresAtMs = Date.now() + 60_000;
+      try {
+        this.db
+          .prepare(`INSERT INTO graph_passcodes(code, guild_id, expires_at) VALUES(?,?,?)`)
+          .run(code, guildId, expiresAtMs);
+        this.checkpoint();
+        return { code, expiresAtMs };
+      } catch {
+        /* rare code collision */
+      }
+    }
+    throw new Error("graph_passcode_issue_failed");
+  }
+
+  /**
+   * Consumes a passcode (if still valid) and returns a longer-lived session token for API access.
+   * Passcode must be redeemed within its original 60s window.
+   */
+  redeemGraphPasscode(code: string): { token: string; guildId: string; sessionExpiresAtMs: number } | null {
+    this.purgeExpiredGraphRows();
+    const normalized = code.trim().replace(/\s+/g, "").toUpperCase();
+    const row = this.db
+      .prepare(`SELECT guild_id, expires_at FROM graph_passcodes WHERE code = ?`)
+      .get(normalized) as { guild_id: string; expires_at: number } | undefined;
+    if (!row || row.expires_at < Date.now()) return null;
+    this.db.prepare(`DELETE FROM graph_passcodes WHERE code = ?`).run(normalized);
+    const sessionMs = Math.max(60_000, Number(process.env.GRAPH_VIEW_SESSION_MS ?? 45 * 60 * 1000));
+    const sessionExpiresAtMs = Date.now() + sessionMs;
+    const token = crypto.randomBytes(32).toString("hex");
+    this.db
+      .prepare(`INSERT INTO graph_sessions(token, guild_id, expires_at) VALUES(?,?,?)`)
+      .run(token, row.guild_id, sessionExpiresAtMs);
+    this.checkpoint();
+    return { token, guildId: row.guild_id, sessionExpiresAtMs };
+  }
+
+  /** Guild id for an active graph viewer session, or null. */
+  validateGraphSession(token: string): string | null {
+    if (!token) return null;
+    this.purgeExpiredGraphRows();
+    const row = this.db
+      .prepare(`SELECT guild_id, expires_at FROM graph_sessions WHERE token = ?`)
+      .get(token) as { guild_id: string; expires_at: number } | undefined;
+    if (!row) return null;
+    if (row.expires_at < Date.now()) {
+      this.db.prepare(`DELETE FROM graph_sessions WHERE token = ?`).run(token);
+      return null;
+    }
+    return row.guild_id;
   }
 
   /**

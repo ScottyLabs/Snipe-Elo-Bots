@@ -1,30 +1,23 @@
+import type { Client } from "discord.js";
 import { EloDb } from "./db";
-import { startDiscordBot } from "./discord/bot";
 import { discordConfig } from "./discord/configDiscord";
-import http from "http";
-
-function startHealthServer(): void {
-  const port = Number(process.env.PORT ?? 8080);
-  const server = http.createServer((req, res) => {
-    const url = req.url ?? "/";
-    if (url === "/health" || url === "/") {
-      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("ok");
-      return;
-    }
-    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("not found");
-  });
-  server.listen(port, () => {
-    console.log(`[snipe-elo-discord] Health server listening on :${port}`);
-  });
-}
+import { startDiscordBot } from "./discord/bot";
+import { startGraphHttpServer } from "./graphHttpServer";
 
 async function main() {
   console.log(`[snipe-elo-discord] DB: ${discordConfig.dbPath}`);
-  startHealthServer();
   const db = new EloDb(discordConfig.dbPath, {
     tenantIdForLegacyMigration: discordConfig.tenantIdForLegacyMigration,
+  });
+  const clientRef: { current: Client | null } = { current: null };
+  const port = Number(process.env.PORT ?? 8080);
+  startGraphHttpServer(port, {
+    db,
+    getGuild: async (gid) => {
+      const c = clientRef.current;
+      if (!c) return null;
+      return c.guilds.cache.get(gid) ?? (await c.guilds.fetch(gid).catch(() => null));
+    },
   });
   const shutdown = (signal: NodeJS.Signals) => {
     try {
@@ -37,7 +30,11 @@ async function main() {
   };
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));
-  await startDiscordBot(db);
+  await startDiscordBot(db, {
+    onReady: (c) => {
+      clientRef.current = c;
+    },
+  });
 }
 
 main().catch((e) => {

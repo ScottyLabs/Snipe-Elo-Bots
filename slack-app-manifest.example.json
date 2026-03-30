@@ -36,6 +36,12 @@
         "should_escape": false
       },
       {
+        "command": "/snipegraph",
+        "url": "https://example.com/slack/events",
+        "description": "One-time code to open the snipe network graph in the browser",
+        "should_escape": false
+      },
+      {
         "command": "/headtohead",
         "url": "https://example.com/slack/events",
         "description": "Head-to-head snipe counts for every pair",
@@ -84,6 +90,7 @@
         "chat:write",
         "reactions:write",
         "users:read",
+        "team:read",
         "files:write",
         "canvases:read",
         "canvases:write"
