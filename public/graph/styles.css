@@ -1,11 +1,11 @@
 :root {
-  --neon-cyan: #00e5ff;
-  --neon-magenta: #ff00aa;
-  --deep-blue: #1a237e;
-  --page-bg: #1a1d26;
+  --accent-red: #ef4444;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --page-bg: #161320;
   --text: #e8eaf0;
-  --panel-bg: rgba(28, 31, 40, 0.94);
-  --edge: rgba(255, 255, 255, 0.28);
+  --panel-bg: rgba(26, 22, 38, 0.94);
+  --edge: rgba(129, 140, 248, 0.35);
 }
 
 * {
@@ -59,15 +59,15 @@ body {
   padding: 1.75rem;
   border-radius: 16px;
   background: var(--panel-bg);
-  border: 1px solid rgba(0, 229, 255, 0.35);
-  box-shadow: 0 0 32px rgba(0, 229, 255, 0.12), 0 0 60px rgba(255, 0, 170, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 32px rgba(59, 130, 246, 0.15), 0 0 48px rgba(139, 92, 246, 0.12);
 }
 
 .card h1 {
   margin: 0 0 0.5rem;
   font-size: 1.35rem;
   font-weight: 600;
-  text-shadow: 0 0 18px rgba(0, 229, 255, 0.45);
+  text-shadow: 0 0 18px rgba(139, 92, 246, 0.4);
 }
 
 .card p {
@@ -89,7 +89,7 @@ body {
   height: 48px;
   border-radius: 12px;
   object-fit: cover;
-  box-shadow: 0 0 16px rgba(255, 0, 170, 0.35);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
 }
 
 .input-row {
@@ -124,8 +124,8 @@ button {
   font-weight: 600;
   font-size: 0.95rem;
   color: #050814;
-  background: linear-gradient(135deg, var(--neon-cyan), #7c4dff);
-  box-shadow: 0 0 18px rgba(0, 229, 255, 0.45);
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.45);
 }
 
 button.secondary {
@@ -141,7 +141,7 @@ button:disabled {
 }
 
 .err {
-  color: #ff8a80;
+  color: #fca5a5;
   font-size: 0.85rem;
   min-height: 1.25rem;
 }
@@ -157,7 +157,7 @@ button:disabled {
   padding: 1rem 1.1rem;
   border-radius: 14px;
   background: var(--panel-bg);
-  border: 1px solid rgba(255, 0, 170, 0.28);
+  border: 1px solid rgba(139, 92, 246, 0.35);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
   font-size: 0.88rem;
   line-height: 1.4;
@@ -170,8 +170,8 @@ button:disabled {
 .panel h2 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
-  color: var(--neon-cyan);
-  text-shadow: 0 0 12px rgba(0, 229, 255, 0.35);
+  color: var(--accent-blue);
+  text-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
 }
 
 .panel h3 {

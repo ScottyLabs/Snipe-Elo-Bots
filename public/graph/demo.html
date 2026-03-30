@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Snipe graph — local demo (vis-network)</title>
+    <link rel="icon" href="logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="logo.png" />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   </head>
@@ -45,22 +47,23 @@
           shape: "circle",
           font: { color: "#ffffff", size: 15, face: "Segoe UI, system-ui, sans-serif" },
           borderWidth: 2,
-          shadow: { enabled: true, color: "rgba(0,229,255,0.35)", size: 12 },
+          shadow: { enabled: true, color: "rgba(124,58,237,0.38)", size: 12 },
         },
         edges: {
           arrows: { to: { enabled: true, scaleFactor: 0.65 } },
-          color: { color: "rgba(255,255,255,0.32)", highlight: "#00E5FF", hover: "#FF00AA" },
-          font: { color: "#E8ECFF", size: 11, strokeWidth: 0, align: "middle" },
+          color: { color: "rgba(129,140,248,0.45)", highlight: "#60a5fa", hover: "#f87171" },
+          font: { color: "#E0E7FF", size: 11, strokeWidth: 0, align: "middle" },
           smooth: { type: "continuous", roundness: 0.35 },
         },
       };
 
+      var peer = { background: "#252036", border: "#6366f1" };
       var nodes = new vis.DataSet([
-        { id: "1", label: "Ada", title: "Ada\nELO 1120", color: { background: "#00E5FF", border: "#7C4DFF" } },
-        { id: "2", label: "Ben", title: "Ben\nELO 1088", color: { background: "#FF00AA", border: "#00E5FF" } },
-        { id: "3", label: "Chen", title: "Chen\nELO 1040", color: { background: "#00E5FF", border: "#7C4DFF" } },
-        { id: "4", label: "Dana", title: "Dana\nELO 1010\n2nd · Silver", color: { background: "#E8E8E8", border: "#708090" } },
-        { id: "5", label: "Eli", title: "Eli\nELO 990", color: { background: "#FF00AA", border: "#00E5FF" } },
+        { id: "1", label: "Ada", title: "Ada\nELO 1120\n1st", font: { color: "#fef2f2", bold: true }, color: { background: "#dc2626", border: "#fca5a5" } },
+        { id: "2", label: "Ben", title: "Ben\nELO 1088\n2nd", font: { color: "#eff6ff", bold: true }, color: { background: "#2563eb", border: "#93c5fd" } },
+        { id: "3", label: "Chen", title: "Chen\nELO 1040\n3rd", font: { color: "#faf5ff", bold: true }, color: { background: "#7c3aed", border: "#c4b5fd" } },
+        { id: "4", label: "Dana", title: "Dana\nELO 1010", color: peer },
+        { id: "5", label: "Eli", title: "Eli\nELO 990", color: peer },
       ]);
       var edges = new vis.DataSet([
         { id: "e1", from: "1", to: "2", label: "3", title: "3 snipe(s)" },
