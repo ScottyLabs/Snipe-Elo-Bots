@@ -123,11 +123,11 @@ const visOpts = {
 /** All players outside the ELO top three (API sets medalRank 1–3 only for them). */
 var DEFAULT_NODE_STYLE = { bg: "#252036", border: "#6366f1" };
 
-/** Top 3 by ELO: red → blue → purple. */
+/** Top 3 by ELO: gold / silver / bronze. */
 var MEDAL_STYLES = {
-  1: { bg: "#dc2626", border: "#fca5a5", hint: "1st", labelColor: "#fef2f2" },
-  2: { bg: "#2563eb", border: "#93c5fd", hint: "2nd", labelColor: "#eff6ff" },
-  3: { bg: "#7c3aed", border: "#c4b5fd", hint: "3rd", labelColor: "#faf5ff" },
+  1: { bg: "#FFD700", border: "#B8860B", hint: "1st · Gold", labelColor: "#1a1206" },
+  2: { bg: "#E8E8E8", border: "#708090", hint: "2nd · Silver", labelColor: "#1a1a22" },
+  3: { bg: "#CD7F32", border: "#5C3D1E", hint: "3rd · Bronze", labelColor: "#fff8f0" },
 };
 
 /** Selected-player view: outgoing = blue; incoming = red. */
