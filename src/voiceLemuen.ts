@@ -265,24 +265,24 @@ export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "disco
   return " — *This snipe claimed today's daily bounty on this mark (2× ELO).*";
 }
 
-/** Snipe confirmation: section when a pair was skipped because of the recent pair cooldown (no ELO). */
+/** Snipe confirmation: section when a pair was skipped because of snipe cooldown (no ELO). */
 export function snipeConfirmationPairCooldownSectionTitle(singleExchange: boolean): string {
   return singleExchange
-    ? "Too soon — no ELO for this exchange (pair cooldown):"
-    : "Too soon — no ELO for these exchanges (pair cooldown):";
+    ? "Too soon — no ELO for this exchange (snipe cooldown):"
+    : "Too soon — no ELO for these exchanges (snipe cooldown):";
 }
 
 export function snipeConfirmationPairCooldownSectionTitleDiscord(singleExchange: boolean): string {
   return singleExchange
-    ? "**Too soon** — no ELO for this exchange (pair cooldown):"
-    : "**Too soon** — no ELO for these exchanges (pair cooldown):";
+    ? "**Too soon** — no ELO for this exchange (snipe cooldown):"
+    : "**Too soon** — no ELO for these exchanges (snipe cooldown):";
 }
 
 export function snipeConfirmationPairCooldownExchangeDetail(platform: "slack" | "discord"): string {
   if (platform === "slack") {
-    return " — _A scoring snipe between these two was too recent._";
+    return " — _Someone here was in a scoring snipe too recently._";
   }
-  return " — *A scoring snipe between these two was too recent.*";
+  return " — *Someone here was in a scoring snipe too recently.*";
 }
 
 export function bountySlashDisabled(_platform: "slack" | "discord"): string {

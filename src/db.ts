@@ -20,7 +20,7 @@ export type PairMatch = {
   snipedBefore: number;
   snipedAfter: number;
   sniperDelta: number;
-  /** True when this pair was skipped because of the recent-pair cooldown (no ELO / no bounty on this pair). */
+  /** True when this pair was skipped because of snipe cooldown (no ELO / no bounty on this pair). */
   pairCooldownSkip?: boolean;
 };
 
@@ -552,18 +552,16 @@ export class EloDb {
 
       const cooldownMs =
         eloEnv.snipePairCooldownMinutes > 0 ? eloEnv.snipePairCooldownMinutes * 60 * 1000 : 0;
-      const lastCountingPairAt = this.db.prepare(
+      /** Latest time this player appeared in any scoring pair (non-undone snipe; sniper_delta != 0). */
+      const lastScoringInvolvementAt = this.db.prepare(
         `SELECT MAX(se.created_at) AS last_at
          FROM event_pair_matches epm
          INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
          WHERE se.guild_id = ?
            AND se.undone_at IS NULL
            AND se.type IN ('snipe', 'makeup')
-           AND (
-             (epm.sniper_id = ? AND epm.sniped_id = ?)
-             OR (epm.sniper_id = ? AND epm.sniped_id = ?)
-           )
-           AND epm.sniper_delta != 0`
+           AND epm.sniper_delta != 0
+           AND (epm.sniper_id = ? OR epm.sniped_id = ?)`
       );
 
       const currentRatings = new Map(startRatings);
@@ -577,15 +575,20 @@ export class EloDb {
         const snipedBefore = currentRatings.get(snipedId)!;
 
         let cooldownSkip = false;
-        let lastCountingPairAtMs: number | null = null;
+        let lastAtSniper: number | null = null;
+        let lastAtSniped: number | null = null;
         if (cooldownMs > 0) {
-          const row = lastCountingPairAt.get(guildId, sniperId, snipedId, snipedId, sniperId) as
+          const rowS = lastScoringInvolvementAt.get(guildId, sniperId, sniperId) as
             | { last_at: number | null }
             | undefined;
-          lastCountingPairAtMs = row?.last_at ?? null;
-          if (lastCountingPairAtMs != null && now - lastCountingPairAtMs < cooldownMs) {
-            cooldownSkip = true;
-          }
+          const rowT = lastScoringInvolvementAt.get(guildId, snipedId, snipedId) as
+            | { last_at: number | null }
+            | undefined;
+          lastAtSniper = rowS?.last_at ?? null;
+          lastAtSniped = rowT?.last_at ?? null;
+          const sniperHot = lastAtSniper != null && now - lastAtSniper < cooldownMs;
+          const snipedHot = lastAtSniped != null && now - lastAtSniped < cooldownMs;
+          cooldownSkip = sniperHot || snipedHot;
         }
 
         if (cooldownSkip) {
@@ -601,14 +604,16 @@ export class EloDb {
             pairCooldownSkip: true,
           });
           pairCooldownPairIndices.push(i);
-          opsLog("elo.pair_cooldown_skip", {
+          opsLog("elo.snipe_cooldown_skip", {
             guildId,
             snipeId,
             sniperId,
             snipedId,
             pairIdx: i,
-            msSinceLastCountingPair:
-              lastCountingPairAtMs != null ? now - lastCountingPairAtMs : undefined,
+            msSinceSniperLastScoring:
+              lastAtSniper != null ? now - lastAtSniper : undefined,
+            msSinceSnipedLastScoring:
+              lastAtSniped != null ? now - lastAtSniped : undefined,
           });
           continue;
         }
@@ -787,7 +792,7 @@ export class EloDb {
       snipedIds,
       pairCount: pairMatches.length,
       bountyPairs: bountyFirstPairIndices.length,
-      pairCooldownPairs: pairCooldownPairIndices.length,
+      snipeCooldownPairs: pairCooldownPairIndices.length,
     });
 
     return {
