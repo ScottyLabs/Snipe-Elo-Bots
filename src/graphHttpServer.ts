@@ -90,6 +90,8 @@ export function weaklyConnectedNodeSet(
 export type GraphHttpOpts = {
   db: EloDb;
   getGuild: (guildId: string) => Promise<Guild | null>;
+  /** Set to the logged-in Discord bot user id after ready; that user is omitted from the graph. */
+  selfBotUserIdRef?: { current: string | null };
 };
 
 /** Discord or Slack: resolve labels for graph + player panel APIs. */
@@ -100,6 +102,8 @@ export type GraphHttpPlatformContext = {
   isGuildResolvableForPlayerPanel: (guildId: string) => Promise<boolean>;
   /** Player IDs to keep in the snipe graph (exclude bots / non-humans). */
   filterGraphHumanPlayerIds: (guildId: string, userIds: string[]) => Promise<Set<string>>;
+  /** This app’s own bot user id(s) — always removed from the graph. */
+  getGraphExcludedSelfPlayerIds: () => Promise<Set<string>>;
 };
 
 export async function handleGraphSiteRequest(
@@ -187,6 +191,9 @@ export async function handleGraphSiteRequest(
       const rowsAll = db.getDirectedSnipePairCounts(guildId);
       const idsAll = collectIdsFromDirectedPairs(rowsAll);
       const humanIds = await ctx.filterGraphHumanPlayerIds(guildId, idsAll);
+      for (const id of await ctx.getGraphExcludedSelfPlayerIds()) {
+        humanIds.delete(id);
+      }
       const rows = rowsAll.filter((r) => humanIds.has(r.sniperId) && humanIds.has(r.snipedId));
       const pairIds = collectIdsFromDirectedPairs(rows);
       const ratings = db.getRatings(guildId, pairIds);
@@ -238,7 +245,7 @@ export async function handleGraphSiteRequest(
 }
 
 export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Server {
-  const { db, getGuild } = opts;
+  const { db, getGuild, selfBotUserIdRef } = opts;
   const platformCtx: GraphHttpPlatformContext = {
     db,
     guildDisplayName: async (guildId) => (await getGuild(guildId))?.name ?? "Server",
@@ -251,6 +258,10 @@ export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Se
       const guild = await getGuild(guildId);
       if (!guild || userIds.length === 0) return new Set(userIds);
       return filterDiscordGraphHumanPlayerIds(guild, userIds);
+    },
+    getGraphExcludedSelfPlayerIds: async () => {
+      const id = selfBotUserIdRef?.current?.trim();
+      return id ? new Set([id]) : new Set();
     },
   };
 

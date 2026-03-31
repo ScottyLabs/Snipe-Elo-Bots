@@ -36,10 +36,11 @@ export function formatSnipeConfirmation(params: {
   const bountyRows = pairMatches.filter((m) => bountySet.has(m.pairIdx));
   const parts: string[] = [header, "", "Exchange of fire:", ...matchLines];
   if (bountyRows.length > 0) {
+    const detail = L.snipeConfirmationBountyExchangeDetail("discord");
     parts.push(
       "",
       L.snipeConfirmationBountySectionTitleDiscord(bountyRows.length === 1),
-      ...bountyRows.map((m) => `- ${mention(m.sniperId)} vs ${mention(m.snipedId)}`)
+      ...bountyRows.map((m) => `- ${mention(m.sniperId)} vs ${mention(m.snipedId)}${detail}`)
     );
   }
   parts.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges));

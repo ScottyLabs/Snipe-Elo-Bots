@@ -69,7 +69,15 @@ export function formatSnipeConfirmation(params: {
     const bountyTitle = discordBountyHeading
       ? L.snipeConfirmationBountySectionTitleDiscord(bountyRows.length === 1)
       : L.snipeConfirmationBountySectionTitle(bountyRows.length === 1);
-    lines.push("", bountyTitle, ...bountyRows.map((m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}`));
+    const plat = discordBountyHeading ? "discord" : "slack";
+    const detail = L.snipeConfirmationBountyExchangeDetail(plat);
+    lines.push(
+      "",
+      bountyTitle,
+      ...bountyRows.map(
+        (m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}${detail}`
+      )
+    );
   }
   lines.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges, nameOf));
   if (duelAppend?.trim()) {

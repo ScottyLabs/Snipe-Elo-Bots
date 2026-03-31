@@ -10,9 +10,11 @@ async function main() {
     tenantIdForLegacyMigration: discordConfig.tenantIdForLegacyMigration,
   });
   const clientRef: { current: Client | null } = { current: null };
+  const selfBotUserIdRef: { current: string | null } = { current: null };
   const port = Number(process.env.PORT ?? 8080);
   startGraphHttpServer(port, {
     db,
+    selfBotUserIdRef,
     getGuild: async (gid) => {
       const c = clientRef.current;
       if (!c) return null;
@@ -33,6 +35,7 @@ async function main() {
   await startDiscordBot(db, {
     onReady: (c) => {
       clientRef.current = c;
+      selfBotUserIdRef.current = c.user?.id ?? null;
     },
   });
 }

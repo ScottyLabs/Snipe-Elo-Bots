@@ -5,6 +5,20 @@ import type { EloDb } from "./db";
 import { handleGraphSiteRequest, type GraphHttpPlatformContext } from "./graphHttpServer";
 import { filterSlackGraphHumanPlayerIds, resolveSlackDisplayNames } from "./slackDisplayNames";
 
+/** Cached from `auth.test` so we exclude this Slack app’s bot user from the graph. */
+let slackGraphBotUserId: string | null | undefined;
+
+async function slackBotOwnUserId(client: WebClient): Promise<string | null> {
+  if (slackGraphBotUserId !== undefined) return slackGraphBotUserId;
+  try {
+    const r = (await client.auth.test({})) as { user_id?: string };
+    slackGraphBotUserId = r.user_id?.trim() || null;
+  } catch {
+    slackGraphBotUserId = null;
+  }
+  return slackGraphBotUserId;
+}
+
 function safeEndJsonError(res: ServerResponse, status: number, body: unknown): void {
   if (res.writableEnded) return;
   const s = JSON.stringify(body);
@@ -57,6 +71,10 @@ export function slackGraphBoltCustomRoutes(args: {
     isGuildResolvableForPlayerPanel: async () => true,
     filterGraphHumanPlayerIds: async (_guildId, userIds) =>
       filterSlackGraphHumanPlayerIds(args.getClient(), userIds),
+    getGraphExcludedSelfPlayerIds: async () => {
+      const id = await slackBotOwnUserId(args.getClient());
+      return id ? new Set([id]) : new Set();
+    },
   });
 
   const runSite = attachGraphHandler(makeCtx, handleGraphSiteRequest);

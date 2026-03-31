@@ -492,7 +492,10 @@ export async function startSlackBot(params: {
     const dk = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
     const row = params.db.getDailyBountyAnnouncementRow(SLACK_GUILD_ID, dk);
     const ids = row?.targetIds ?? [];
-    const names = await resolveSlackDisplayNames(client, ids);
+    const claims = params.db.getBountyFirstSnipesForDate(SLACK_GUILD_ID, dk);
+    const claimantIds = [...new Set(claims.map((c) => c.sniperId))];
+    const resolveIds = [...new Set([...ids, ...claimantIds])];
+    const names = await resolveSlackDisplayNames(client, resolveIds);
     const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
     return formatBountyStatusMessage({
       platform: "slack",

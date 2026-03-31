@@ -410,6 +410,23 @@ export class EloDb {
     return rows.map((r) => r.bounty_target_id);
   }
 
+  /** First qualifying snipe per mark today (who landed it + snipe row id). */
+  getBountyFirstSnipesForDate(
+    guildId: string,
+    bountyDate: string
+  ): { bountyTargetId: string; sniperId: string; snipeId: string }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT bounty_target_id, sniper_id, snipe_id FROM bounty_first_snipes WHERE guild_id = ? AND bounty_date = ?`
+      )
+      .all(guildId, bountyDate) as { bounty_target_id: string; sniper_id: string; snipe_id: string }[];
+    return rows.map((r) => ({
+      bountyTargetId: r.bounty_target_id,
+      sniperId: r.sniper_id,
+      snipeId: r.snipe_id,
+    }));
+  }
+
   upsertDailyBountyTargets(guildId: string, bountyDate: string, targetIds: string[], announcedAt: number): void {
     this.db
       .prepare(

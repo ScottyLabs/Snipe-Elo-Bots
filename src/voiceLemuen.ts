@@ -257,6 +257,14 @@ export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boole
     : "**Daily bounty** — **2× ELO** on these exchanges:";
 }
 
+/** Appended to each bounty pair line: names the snipe that seized the mark. */
+export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return " — _This snipe claimed today's daily bounty on this mark (2× ELO)._";
+  }
+  return " — *This snipe claimed today's daily bounty on this mark (2× ELO).*";
+}
+
 export function bountySlashDisabled(_platform: "slack" | "discord"): string {
   return "Daily bounty is switched off in this deployment—nothing to list, I'm afraid.";
 }
@@ -308,13 +316,22 @@ export function bountySlashMarkLine(
   platform: "slack" | "discord",
   rank: number,
   displayName: string,
-  claimed: boolean
+  claimed: boolean,
+  claimedByDisplayName?: string | null
 ): string {
   if (platform === "slack") {
-    const status = claimed ? "_claimed today_" : "_2× still open—first to snipe them wins it_";
+    const status = claimed
+      ? claimedByDisplayName
+        ? `_claimed today by ${claimedByDisplayName}_`
+        : "_claimed today_"
+      : "_2× still open—first to snipe them wins it_";
     return `${rank}. ${displayName} — ${status}`;
   }
-  const status = claimed ? "*claimed today*" : "*2× still open—first to snipe them wins it*";
+  const status = claimed
+    ? claimedByDisplayName
+      ? `*claimed today* by *${claimedByDisplayName}*`
+      : "*claimed today*"
+    : "*2× still open—first to snipe them wins it*";
   return `${rank}. ${displayName} — ${status}`;
 }
 

@@ -568,7 +568,10 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         const dateKey = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
         const row = db.getDailyBountyAnnouncementRow(guildId, dateKey);
         const bountyIds = row?.targetIds ?? [];
-        const bountyNames = await resolveDiscordDisplayNames(interaction.guild, bountyIds);
+        const claims = db.getBountyFirstSnipesForDate(guildId, dateKey);
+        const claimantIds = [...new Set(claims.map((c) => c.sniperId))];
+        const bountyResolveIds = [...new Set([...bountyIds, ...claimantIds])];
+        const bountyNames = await resolveDiscordDisplayNames(interaction.guild, bountyResolveIds);
         const bountyNameOf = (id: string) => escapeDiscordMarkdownChunk(bountyNames.get(id) ?? id);
         const text = formatBountyStatusMessage({
           platform: "discord",
