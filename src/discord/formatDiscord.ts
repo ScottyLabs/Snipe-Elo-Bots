@@ -34,6 +34,7 @@ export function formatSnipeConfirmation(params: {
   });
 
   const bountyRows = pairMatches.filter((m) => bountySet.has(m.pairIdx));
+  const cooldownRows = pairMatches.filter((m) => m.pairCooldownSkip);
   const parts: string[] = [header, "", "Exchange of fire:", ...matchLines];
   if (bountyRows.length > 0) {
     const detail = L.snipeConfirmationBountyExchangeDetail("discord");
@@ -41,6 +42,16 @@ export function formatSnipeConfirmation(params: {
       "",
       L.snipeConfirmationBountySectionTitleDiscord(bountyRows.length === 1),
       ...bountyRows.map((m) => `- ${mention(m.sniperId)} vs ${mention(m.snipedId)}${detail}`)
+    );
+  }
+  if (cooldownRows.length > 0) {
+    const cdDetail = L.snipeConfirmationPairCooldownExchangeDetail("discord");
+    parts.push(
+      "",
+      L.snipeConfirmationPairCooldownSectionTitleDiscord(cooldownRows.length === 1),
+      ...cooldownRows.map(
+        (m) => `- ${mention(m.sniperId)} vs ${mention(m.snipedId)}${cdDetail}`
+      )
     );
   }
   parts.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges));

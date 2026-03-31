@@ -33,7 +33,8 @@ import {
   takeDiscordHumanLeaderboardPaged,
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
-import { calendarDateKeyInTimeZone } from "../bounty";
+import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "../bounty";
+import { applyManualBountyTargets } from "../bountyManual";
 import { bountyEnv } from "../bountyEnv";
 import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
@@ -181,6 +182,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "• `/snipeduel <opponent> <duration> <bet>` — challenge a timed duel (e.g. `7d` stake `50`). Target: `acceptduel` / `declineduel`; challenger: `cancelduel` in the thread.",
     "• `/removesnipe <confirmation_id>` — undo one recorded snipe.",
     "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
+    "• `/setbounty <@marks…>` — set today's bounty marks (moderators); auto midnight list won't overwrite until tomorrow.",
     "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
     "",
     "**Implicit snipe rule**",
@@ -373,6 +375,16 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           o
             .setName("delta")
             .setDescription("Points to add (positive) or shave off (negative)")
+            .setRequired(true)
+        ),
+      new SlashCommandBuilder()
+        .setName("setbounty")
+        .setDescription(L.discordSlashDescriptions.setbounty)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addStringOption((o) =>
+          o
+            .setName("marks")
+            .setDescription("Ping each bounty mark, e.g. @alice @bob @carol")
             .setRequired(true)
         ),
       new SlashCommandBuilder()
@@ -824,6 +836,81 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         channelId: interaction.channelId,
         actorId: interaction.user.id,
       });
+      return;
+    }
+
+    if (interaction.commandName === "setbounty") {
+      if (!isDiscordModerator(interaction)) {
+        await interaction.reply({ content: L.discordModeratorOnlyCommand(), ephemeral: true });
+        return;
+      }
+      if (!interaction.guild) {
+        await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+      const expectedCh = getGuildSnipeChannelId(db, interaction.guild.id);
+      if (!expectedCh || interaction.channelId !== expectedCh) {
+        await interaction.reply({
+          content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
+          ephemeral: true,
+        });
+        return;
+      }
+      const marksRaw = interaction.options.getString("marks", true);
+      const ids = parseMentionedUserIdsFromContent(marksRaw);
+      if (ids.length === 0) {
+        await interaction.reply({ content: L.setBountyNoMentions(), ephemeral: true });
+        return;
+      }
+      await interaction.deferReply();
+      try {
+        if (!bountyEnv.enabled) {
+          await interaction.editReply({ content: L.setBountyDisabled("discord") });
+          return;
+        }
+        for (const id of ids) {
+          const u = await interaction.client.users.fetch(id).catch(() => null);
+          if (!u || u.bot) {
+            await interaction.editReply({ content: L.setBountyNoMentions() });
+            return;
+          }
+        }
+        const { dateKey, targetIds, truncated } = applyManualBountyTargets({
+          db,
+          guildId: interaction.guild.id,
+          targetIds: ids,
+        });
+        const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
+        const nameMap = await resolveDiscordDisplayNames(interaction.guild, targetIds);
+        const rankedLines = targetIds.map((id) => escapeDiscordMarkdownChunk(nameMap.get(id) ?? id));
+        let content =
+          L.bountyDailyAnnouncementDiscord({ dateLabel, rankedLines }) +
+          "\n\n" +
+          L.setBountyOperatorFooter("discord");
+        if (truncated) {
+          content += "\n\n" + L.setBountyTooManyDropped(bountyEnv.topN);
+        }
+        await interaction.editReply({ content });
+        opsLog("discord.setbounty.ok", {
+          guildId: interaction.guild.id,
+          actorId: interaction.user.id,
+          dateKey,
+          count: targetIds.length,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "bounty_disabled") {
+          await interaction.editReply({ content: L.setBountyDisabled("discord") });
+          return;
+        }
+        if (msg === "no_marks") {
+          await interaction.editReply({ content: L.setBountyNoMentions() });
+          return;
+        }
+        await interaction.editReply({
+          content: L.setBountyFailed("/setbounty", msg),
+        });
+      }
       return;
     }
 

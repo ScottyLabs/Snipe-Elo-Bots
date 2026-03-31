@@ -51,6 +51,7 @@ export function formatSnipeConfirmation(params: {
     discordBountyHeading,
   } = params;
   const bountySet = new Set(bountyFirstPairIndices ?? []);
+  const cooldownRows = pairMatches.filter((m) => m.pairCooldownSkip);
   const header =
     kind === "makeup"
       ? `Mission accomplished. A makeup snipe is filed under ${nameOf(sniperId)}; the records are thorough, you see.`
@@ -77,6 +78,18 @@ export function formatSnipeConfirmation(params: {
       ...bountyRows.map(
         (m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}${detail}`
       )
+    );
+  }
+  if (cooldownRows.length > 0) {
+    const cdTitle = discordBountyHeading
+      ? L.snipeConfirmationPairCooldownSectionTitleDiscord(cooldownRows.length === 1)
+      : L.snipeConfirmationPairCooldownSectionTitle(cooldownRows.length === 1);
+    const plat = discordBountyHeading ? "discord" : "slack";
+    const cdDetail = L.snipeConfirmationPairCooldownExchangeDetail(plat);
+    lines.push(
+      "",
+      cdTitle,
+      ...cooldownRows.map((m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}${cdDetail}`)
     );
   }
   lines.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges, nameOf));

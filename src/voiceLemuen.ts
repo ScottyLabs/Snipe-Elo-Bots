@@ -265,6 +265,26 @@ export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "disco
   return " — *This snipe claimed today's daily bounty on this mark (2× ELO).*";
 }
 
+/** Snipe confirmation: section when a pair was skipped because of the recent pair cooldown (no ELO). */
+export function snipeConfirmationPairCooldownSectionTitle(singleExchange: boolean): string {
+  return singleExchange
+    ? "Too soon — no ELO for this exchange (pair cooldown):"
+    : "Too soon — no ELO for these exchanges (pair cooldown):";
+}
+
+export function snipeConfirmationPairCooldownSectionTitleDiscord(singleExchange: boolean): string {
+  return singleExchange
+    ? "**Too soon** — no ELO for this exchange (pair cooldown):"
+    : "**Too soon** — no ELO for these exchanges (pair cooldown):";
+}
+
+export function snipeConfirmationPairCooldownExchangeDetail(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return " — _A scoring snipe between these two was too recent._";
+  }
+  return " — *A scoring snipe between these two was too recent.*";
+}
+
 export function bountySlashDisabled(_platform: "slack" | "discord"): string {
   return "Daily bounty is switched off in this deployment—nothing to list, I'm afraid.";
 }
@@ -342,6 +362,40 @@ export function bountySlashFooter(platform: "slack" | "discord"): string {
   return "*Marks who snipe others use normal ELO—only being sniped as a mark can trigger 2×.*";
 }
 
+export function setBountyUsage(slashPath: string): string {
+  return `Usage: \`${slashPath}\` @user1 @user2 … — up to the day's mark count (see BOUNTY_TOP_N). Same permission as adjustelo.`;
+}
+
+export function setBountyDisabled(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return "_Daily bounty is off in this deployment—nothing to set._";
+  }
+  return "*Daily bounty is off in this deployment—nothing to set.*";
+}
+
+export function setBountyNoMentions(): string {
+  return "Mention at least one human mark (e.g. @player). Bots won't do.";
+}
+
+export function setBountyTooManyDropped(maxMarks: number): string {
+  return `Only the first ${maxMarks} mark(s) are kept (BOUNTY_TOP_N).`;
+}
+
+export function setBountyOperatorFooter(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return "_Manual list for today—midnight auto-roll won't replace it until the calendar turns._";
+  }
+  return "_Manual list for today—midnight auto-roll won't replace it until the calendar turns._";
+}
+
+export function setBountyFailed(context: string, msg: string): string {
+  return `${context} failed: ${msg}`;
+}
+
+export function setBountySuccessEphemeral(): string {
+  return "Posted today's bounty marks to the channel—the midnight auto-list won't replace them until the calendar turns.";
+}
+
 export function graphViewerNotConfigured(): string {
   return `The graph viewer isn't wired yet—set GRAPH_PUBLIC_BASE_URL on the host to your Railway URL (no trailing slash), if you please.`;
 }
@@ -371,6 +425,7 @@ export const discordSlashDescriptions = {
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",
+  setbounty: "Set today's bounty marks (@mentions). Same access as adjustelo.",
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
   headtohead: "Pairwise snipe counts for everyone still on the books.",

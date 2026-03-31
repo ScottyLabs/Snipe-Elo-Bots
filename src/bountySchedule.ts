@@ -9,6 +9,7 @@ import {
   takeSlackHumanLeaderboardPaged,
   type SlackInfoClient,
 } from "./slackDisplayNames";
+import { bountyAutoAnnounceShouldSkip } from "./bountyManual";
 import * as L from "./voiceLemuen";
 
 type SlackBountyClient = SlackInfoClient & {
@@ -25,6 +26,7 @@ export async function announceSlackBountyForDate(
   dateKey: string
 ): Promise<void> {
   if (!bountyEnv.enabled) return;
+  if (bountyAutoAnnounceShouldSkip(db, guildId, dateKey)) return;
   const sorted = db.getAllPlayersSorted(guildId);
   const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sorted, bountyEnv.topN);
   const targetIds = allHumans.map((p) => p.playerId).slice(0, bountyEnv.topN);
@@ -99,6 +101,7 @@ async function announceDiscordBountyForGuild(
   dateKey: string
 ): Promise<void> {
   if (!bountyEnv.enabled) return;
+  if (bountyAutoAnnounceShouldSkip(db, guildId, dateKey)) return;
   const guild = await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return;
   const sorted = db.getAllPlayersSorted(guildId);

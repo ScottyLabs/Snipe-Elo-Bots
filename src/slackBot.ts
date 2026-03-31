@@ -37,7 +37,8 @@ import {
   parseDurationToMs,
 } from "./snipeDuel";
 import * as L from "./voiceLemuen";
-import { calendarDateKeyInTimeZone } from "./bounty";
+import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
+import { applyManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
@@ -250,6 +251,7 @@ function formatSlackHelpText(): string {
     "*Scoring / moderation*",
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
     `• \`${c.slashAdjustElo}\` <user> <delta> — manual ELO change (allowlisted IDs only).`,
+    `• \`${c.slashSetBounty}\` @user1 @user2 … — set today's bounty marks (same allowlist as adjustelo).`,
     `• \`${c.slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainSlackCmd(c.slashUndo)}\`.`,
     "",
     "*Duels*",
@@ -286,6 +288,64 @@ async function resolveUserTokensToIds(args: { client: any; tokens: string[] }): 
     ids.push(id);
   }
   return uniquePreserveOrder(ids);
+}
+
+type SlackSetBountyResult =
+  | { ok: true; channelText: string; dateKey: string; count: number }
+  | { ok: false; ephemeral: string; opsLogError?: string };
+
+async function executeSlackSetBounty(args: {
+  client: any;
+  db: EloDb;
+  markTokens: string[];
+}): Promise<SlackSetBountyResult> {
+  if (args.markTokens.length === 0) {
+    return { ok: false, ephemeral: L.setBountyUsage(config.slackOps.slashSetBounty) };
+  }
+  if (!bountyEnv.enabled) {
+    return { ok: false, ephemeral: L.setBountyDisabled("slack") };
+  }
+  try {
+    const markIds = await resolveUserTokensToIds({ client: args.client, tokens: args.markTokens });
+    for (const id of markIds) {
+      const snap = await getSlackUserProfileCached(args.client, id);
+      if (!snap || snap.isBot || snap.deleted) {
+        return { ok: false, ephemeral: L.setBountyNoMentions() };
+      }
+    }
+    const { dateKey, targetIds, truncated } = applyManualBountyTargets({
+      db: args.db,
+      guildId: SLACK_GUILD_ID,
+      targetIds: markIds,
+    });
+    const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
+    const names = await resolveSlackDisplayNames(args.client, targetIds);
+    const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(names.get(id) ?? id));
+    let channelText =
+      L.bountyDailyAnnouncementSlack({ dateLabel, rankedLines }) +
+      "\n\n" +
+      L.setBountyOperatorFooter("slack");
+    if (truncated) {
+      channelText += "\n\n_" + L.setBountyTooManyDropped(bountyEnv.topN) + "_";
+    }
+    return { ok: true, channelText, dateKey, count: targetIds.length };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.startsWith("unrecognized_user_token:")) {
+      return { ok: false, ephemeral: L.setBountyUsage(config.slackOps.slashSetBounty) };
+    }
+    if (msg === "bounty_disabled") {
+      return { ok: false, ephemeral: L.setBountyDisabled("slack") };
+    }
+    if (msg === "no_marks") {
+      return { ok: false, ephemeral: L.setBountyNoMentions() };
+    }
+    return {
+      ok: false,
+      ephemeral: L.setBountyFailed(config.slackOps.slashSetBounty, msg),
+      opsLogError: msg,
+    };
+  }
 }
 
 /** Non-sniper mentions that are human (not bot, not deleted). */
@@ -465,6 +525,7 @@ export async function startSlackBot(params: {
       playerChanges: result.playerChanges,
       nameOf,
       duelAppend,
+      bountyFirstPairIndices: result.bountyFirstPairIndices,
     });
 
     const confirmationTs = await postToThread(args.channelId, args.threadTs, confirmationText);
@@ -929,6 +990,48 @@ export async function startSlackBot(params: {
     }
   });
 
+  app.command(config.slackOps.slashSetBounty, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(command.user_id)) {
+      opsLog("command.slash.setbounty.denied", { userId: command.user_id });
+      await respond({ response_type: "ephemeral", text: L.adjustEloForbidden() });
+      return;
+    }
+    const tokens = command.text.trim().split(/\s+/).filter(Boolean);
+    opsLog("command.slash.setbounty", {
+      userId: command.user_id,
+      channelId: command.channel_id,
+      textPreview: command.text.slice(0, 200),
+    });
+    const result = await executeSlackSetBounty({
+      client,
+      db: params.db,
+      markTokens: tokens,
+    });
+    if (!result.ok) {
+      if (result.opsLogError) {
+        opsLog("command.slash.setbounty.error", { error: result.opsLogError });
+      }
+      await respond({ response_type: "ephemeral", text: result.ephemeral });
+      return;
+    }
+    await client.chat.postMessage({
+      channel: command.channel_id,
+      text: result.channelText,
+      mrkdwn: true,
+    });
+    await respond({ response_type: "ephemeral", text: L.setBountySuccessEphemeral() });
+    opsLog("command.slash.setbounty.ok", {
+      userId: command.user_id,
+      dateKey: result.dateKey,
+      count: result.count,
+    });
+  });
+
   app.command(config.slackOps.slashSnipeDuel, async ({ command, ack, respond, client }) => {
     await ack();
     if (command.channel_id !== config.slack.channelId) {
@@ -1002,7 +1105,7 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}`
   );
 
   const plainCmd = {
@@ -1016,12 +1119,13 @@ export async function startSlackBot(params: {
     undo: plainSlackCmd(config.slackOps.slashUndo),
     makeup: plainSlackCmd(config.slackOps.slashMakeup),
     adjust: plainSlackCmd(config.slackOps.slashAdjustElo),
+    setBounty: plainSlackCmd(config.slackOps.slashSetBounty),
   };
 
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1373,6 +1477,42 @@ export async function startSlackBot(params: {
             opsLog("command.text.adjustelo.result", { result: "error", error: msg });
             await postEphemeral(L.adjustCommandFailed(config.slackOps.slashAdjustElo, msg));
           }
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.setBounty)) {
+          if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(userId)) {
+            opsLog("command.text.setbounty.denied", { userId });
+            await postEphemeral(L.adjustEloForbidden());
+            return;
+          }
+          const parts = text.split(/\s+/).filter(Boolean);
+          const markTokens = parts.slice(1);
+          opsLog("command.text.setbounty", { userId, channelId, textPreview: text.slice(0, 200) });
+          const bountyResult = await executeSlackSetBounty({
+            client,
+            db: params.db,
+            markTokens,
+          });
+          if (!bountyResult.ok) {
+            if (bountyResult.opsLogError) {
+              opsLog("command.text.setbounty.error", { error: bountyResult.opsLogError });
+            }
+            await postEphemeral(bountyResult.ephemeral);
+            return;
+          }
+          await client.chat.postMessage({
+            channel: channelId,
+            ...(threadTs ? { thread_ts: threadTs } : {}),
+            text: bountyResult.channelText,
+            mrkdwn: true,
+          });
+          await postEphemeral(L.setBountySuccessEphemeral());
+          opsLog("command.text.setbounty.ok", {
+            userId,
+            dateKey: bountyResult.dateKey,
+            count: bountyResult.count,
+          });
           return;
         }
       }

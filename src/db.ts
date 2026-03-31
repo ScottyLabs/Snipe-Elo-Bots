@@ -20,6 +20,8 @@ export type PairMatch = {
   snipedBefore: number;
   snipedAfter: number;
   sniperDelta: number;
+  /** True when this pair was skipped because of the recent-pair cooldown (no ELO / no bounty on this pair). */
+  pairCooldownSkip?: boolean;
 };
 
 export type PlayerChange = {
@@ -508,6 +510,7 @@ export class EloDb {
     playerChanges: PlayerChange[];
     finalRatings: Map<string, number>;
     bountyFirstPairIndices: number[];
+    pairCooldownPairIndices: number[];
   } {
     const guildId = args.guildId;
     const now = Date.now();
@@ -547,14 +550,68 @@ export class EloDb {
          VALUES(?,?,?,?,?)`
       );
 
+      const cooldownMs =
+        eloEnv.snipePairCooldownMinutes > 0 ? eloEnv.snipePairCooldownMinutes * 60 * 1000 : 0;
+      const lastCountingPairAt = this.db.prepare(
+        `SELECT MAX(se.created_at) AS last_at
+         FROM event_pair_matches epm
+         INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
+         WHERE se.guild_id = ?
+           AND se.undone_at IS NULL
+           AND se.type IN ('snipe', 'makeup')
+           AND (
+             (epm.sniper_id = ? AND epm.sniped_id = ?)
+             OR (epm.sniper_id = ? AND epm.sniped_id = ?)
+           )
+           AND epm.sniper_delta != 0`
+      );
+
       const currentRatings = new Map(startRatings);
       const pairMatches: PairMatch[] = [];
       const bountyFirstPairIndices: number[] = [];
+      const pairCooldownPairIndices: number[] = [];
 
       for (let i = 0; i < snipedIds.length; i++) {
         const snipedId = snipedIds[i];
         const sniperBefore = currentRatings.get(sniperId)!;
         const snipedBefore = currentRatings.get(snipedId)!;
+
+        let cooldownSkip = false;
+        let lastCountingPairAtMs: number | null = null;
+        if (cooldownMs > 0) {
+          const row = lastCountingPairAt.get(guildId, sniperId, snipedId, snipedId, sniperId) as
+            | { last_at: number | null }
+            | undefined;
+          lastCountingPairAtMs = row?.last_at ?? null;
+          if (lastCountingPairAtMs != null && now - lastCountingPairAtMs < cooldownMs) {
+            cooldownSkip = true;
+          }
+        }
+
+        if (cooldownSkip) {
+          pairMatches.push({
+            pairIdx: i,
+            sniperId,
+            snipedId,
+            sniperBefore,
+            sniperAfter: sniperBefore,
+            snipedBefore,
+            snipedAfter: snipedBefore,
+            sniperDelta: 0,
+            pairCooldownSkip: true,
+          });
+          pairCooldownPairIndices.push(i);
+          opsLog("elo.pair_cooldown_skip", {
+            guildId,
+            snipeId,
+            sniperId,
+            snipedId,
+            pairIdx: i,
+            msSinceLastCountingPair:
+              lastCountingPairAtMs != null ? now - lastCountingPairAtMs : undefined,
+          });
+          continue;
+        }
 
         const { sniperDelta: baseSniperDelta } = computePairRatingDeltas({
           sniperRating: sniperBefore,
@@ -686,15 +743,17 @@ export class EloDb {
         );
       }
 
-      return { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices };
+      return { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices, pairCooldownPairIndices };
     });
 
-    const { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices } = tx();
+    const { pairMatches, playerChanges, currentRatings, bountyFirstPairIndices, pairCooldownPairIndices } =
+      tx();
     if (bountyFirstPairIndices.length > 0) {
       this.checkpoint();
     }
 
     for (const c of playerChanges) {
+      if (c.delta === 0) continue;
       opsLog("elo.change", {
         guildId,
         snipeId,
@@ -728,6 +787,7 @@ export class EloDb {
       snipedIds,
       pairCount: pairMatches.length,
       bountyPairs: bountyFirstPairIndices.length,
+      pairCooldownPairs: pairCooldownPairIndices.length,
     });
 
     return {
@@ -736,6 +796,7 @@ export class EloDb {
       playerChanges,
       finalRatings: currentRatings,
       bountyFirstPairIndices,
+      pairCooldownPairIndices,
     };
   }
 

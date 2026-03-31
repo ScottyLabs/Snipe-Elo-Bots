@@ -79,6 +79,13 @@
         "description": "Manually adjust ELO (authorized users only)",
         "usage_hint": "[user mention] [delta]",
         "should_escape": false
+      },
+      {
+        "command": "/setbounty",
+        "url": "https://example.com/slack/events",
+        "description": "Set today's bounty marks (authorized users only)",
+        "usage_hint": "@user1 @user2 …",
+        "should_escape": false
       }
     ]
   },
