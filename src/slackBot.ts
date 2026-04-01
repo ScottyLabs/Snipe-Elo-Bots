@@ -253,7 +253,7 @@ function formatSlackHelpText(): string {
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
     `• \`${c.slashAdjustElo}\` <user> <delta> — manual ELO change (allowlisted IDs only).`,
     `• \`${c.slashSetBounty}\` @user1 @user2 … — set today's bounty marks (same allowlist as adjustelo).`,
-    `• \`${c.slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainSlackCmd(c.slashUndo)}\`.`,
+    L.helpSnipeUndoLineSlack(c.slashUndo, plainSlackCmd(c.slashUndo)),
     "",
     "*Duels*",
     `• \`${c.slashSnipeDuel}\` <@opponent> <duration> <bet> — e.g. \`${c.slashSnipeDuel} @user 7d 50\`.`,
@@ -798,6 +798,12 @@ export async function startSlackBot(params: {
       await wrongChannelEphemeral(respond);
       return;
     }
+    const removesnipeBlock = L.removesnipeDisabledAprilFools();
+    if (removesnipeBlock) {
+      await respond({ response_type: "ephemeral", text: removesnipeBlock });
+      opsLog("command.slash.removesnipe.blocked", { reason: "april_fools", userId: command.user_id });
+      return;
+    }
     const threadTs = command.thread_ts;
     if (!threadTs) {
       await respond({
@@ -1154,6 +1160,12 @@ export async function startSlackBot(params: {
 
       // Slack does not invoke app slash commands from thread composers—plain text in the thread always works.
       if (threadTs && text && isCommandBody(lower, plainCmd.undo)) {
+        const removesnipeBlock = L.removesnipeDisabledAprilFools();
+        if (removesnipeBlock) {
+          await postEphemeral(removesnipeBlock);
+          opsLog("command.text.removesnipe.blocked", { userId, channelId, threadTs, reason: "april_fools" });
+          return;
+        }
         opsLog("command.text.removesnipe", { userId, channelId, threadTs });
         try {
           const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);

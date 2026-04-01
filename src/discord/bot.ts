@@ -181,7 +181,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "**Scoring / moderation**",
     "• `/makeupsnipe <sniper> <sniped...>` — log a snipe that missed camera.",
     "• `/snipeduel <opponent> <duration> <bet>` — challenge a timed duel (e.g. `7d` stake `50`). Target: `acceptduel` / `declineduel`; challenger: `cancelduel` in the thread.",
-    "• `/removesnipe <confirmation_id>` — undo one recorded snipe.",
+    L.helpSnipeUndoLineDiscord(),
     "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
     "• `/setbounty <@marks…>` — set today's bounty marks (moderators); auto midnight list won't overwrite until tomorrow.",
     "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
@@ -649,6 +649,13 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           content: expectedCh ? L.wrongSnipeChannel(`<#${expectedCh}>`) : L.serverNotConfigured(),
           ephemeral: true,
         });
+        return;
+      }
+
+      const removesnipeBlock = L.removesnipeDisabledAprilFools();
+      if (removesnipeBlock) {
+        await interaction.reply({ content: removesnipeBlock, ephemeral: true });
+        opsLog("discord.removesnipe.blocked", { reason: "april_fools", guildId: interaction.guild.id });
         return;
       }
 

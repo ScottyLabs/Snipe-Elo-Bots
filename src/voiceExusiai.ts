@@ -22,6 +22,20 @@ export function helpCommandPrologue(platform: "slack" | "discord"): string {
   );
 }
 
+export function removesnipeDisabledAprilFools(): string | null {
+  return (
+    "_April Fools—no take-backs while I'm on the desk, Leader! `removesnipe` is on vacation; my sis brings the eraser when she's back~_"
+  );
+}
+
+export function helpSnipeUndoLineSlack(slashUndo: string, plainUndo: string): string {
+  return `• \`${slashUndo}\` / plain \`${plainUndo}\` — *off for April Fools* (what's logged stays logged on my shift!).`;
+}
+
+export function helpSnipeUndoLineDiscord(): string {
+  return "• `/removesnipe` — *disabled for April Fools* (Exusiai doesn't do refunds—Lemuen restores this later).";
+}
+
 export function snipeConfirmationHeader(params: {
   kind: "snipe" | "makeup";
   sniperLabel: string;
@@ -451,7 +465,7 @@ export const discordSlashDescriptions = {
   help: "Field manual: commands, rules, quick paths—Sup, Leader!",
   leaderboard: "Who's topping the charts? Post the ELO board!",
   show_leaderboard: "Same as /leaderboard—standings right here, rock n' roll.",
-  removesnipe: "Strike a snipe from the record (bot confirmation message ID).",
+  removesnipe: "April Fools: disabled—Lemuen restores undo later.",
   makeupsnipe: "Backfill a snipe the camera missed—Penguin Logistics paperwork!",
   adjustelo: "Hand-tune someone's rating—use sparingly, authorized only.",
   setbounty: "Set today's bounty marks (@mentions). Same keys as adjustelo.",

@@ -10,6 +10,19 @@ export function helpCommandPrologue(_platform: "slack" | "discord"): string {
   return "";
 }
 
+/** When non-null, undo/removesnipe is blocked (April Fools Exusiai mode). */
+export function removesnipeDisabledAprilFools(): string | null {
+  return null;
+}
+
+export function helpSnipeUndoLineSlack(slashUndo: string, plainUndo: string): string {
+  return `• \`${slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainUndo}\`.`;
+}
+
+export function helpSnipeUndoLineDiscord(): string {
+  return "• `/removesnipe <confirmation_id>` — undo one recorded snipe.";
+}
+
 export function snipeConfirmationHeader(params: {
   kind: "snipe" | "makeup";
   sniperLabel: string;
