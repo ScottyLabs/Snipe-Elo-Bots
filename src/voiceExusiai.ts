@@ -10,9 +10,16 @@
 
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
-    return "_Exusiai's covering the desk today for her sis—same rules, bigger energy. Happy April Fools, Leader!_";
+    return (
+      "_Exusiai's covering the desk today for her sis—April Fools! Snipe scoring's *flipped*: " +
+      "whoever gets tagged *gains* ELO from the shooter (bounty 2× still applies to the mark). " +
+      "Lemuen will fix the math tomorrow~_"
+    );
   }
-  return "**Exusiai** is covering the desk today for her sis—same rules, bigger energy. Happy April Fools, Leader!";
+  return (
+    "**Exusiai** is covering for her sis—April Fools! Snipe ELO is **flipped**: whoever gets sniped **gains** points from the shooter " +
+    "(bounty 2× still applies to the mark). Lemuen can straighten the books later, Leader!"
+  );
 }
 
 export function snipeConfirmationHeader(params: {

@@ -8,6 +8,7 @@ import { eloEnv } from "./eloEnv";
 import { computePairRatingDeltas } from "./elo";
 import { opsLog } from "./opsLog";
 import { SLACK_GUILD_ID } from "./tenants";
+import { isExusiaiVoiceActive } from "./voice";
 
 export type PlayerRating = { playerId: string; rating: number };
 
@@ -527,6 +528,7 @@ export class EloDb {
     const startRatings = this.getRatings(guildId, involvedIds);
     const snipedIdsJson = JSON.stringify(snipedIds);
     const bountyDateKey = calendarDateKeyInTimeZone(now, bountyEnv.timezone);
+    const reverseSnipeElo = isExusiaiVoiceActive();
 
     const tx = this.db.transaction(() => {
       const row = this.db
@@ -618,10 +620,16 @@ export class EloDb {
           continue;
         }
 
-        const { sniperDelta: baseSniperDelta } = computePairRatingDeltas({
-          sniperRating: sniperBefore,
-          snipedRating: snipedBefore,
-        });
+        // Normal: shooter gains from target. Exusiai voice: same ELO magnitude, target gains from shooter (April Fools).
+        const { sniperDelta: baseTransfer } = reverseSnipeElo
+          ? computePairRatingDeltas({
+              sniperRating: snipedBefore,
+              snipedRating: sniperBefore,
+            })
+          : computePairRatingDeltas({
+              sniperRating: sniperBefore,
+              snipedRating: snipedBefore,
+            });
 
         // Daily bounty: 2× transfer only when the *sniped* player is a listed mark and this is their
         // first time sniped that calendar day. A mark who *snipes* others uses normal ELO (sniperId is ignored here).
@@ -632,10 +640,11 @@ export class EloDb {
         if (bountyEnv.enabled && bountyClaimStillOpen) {
           mult = 2;
         }
-        const sniperDelta = baseSniperDelta * mult;
+        const transferMag = baseTransfer * mult;
 
-        const sniperAfter = sniperBefore + sniperDelta;
-        const snipedAfter = snipedBefore - sniperDelta;
+        const sniperAfter = reverseSnipeElo ? sniperBefore - transferMag : sniperBefore + transferMag;
+        const snipedAfter = reverseSnipeElo ? snipedBefore + transferMag : snipedBefore - transferMag;
+        const sniperDelta = sniperAfter - sniperBefore;
 
         currentRatings.set(sniperId, sniperAfter);
         currentRatings.set(snipedId, snipedAfter);
@@ -793,6 +802,7 @@ export class EloDb {
       pairCount: pairMatches.length,
       bountyPairs: bountyFirstPairIndices.length,
       snipeCooldownPairs: pairCooldownPairIndices.length,
+      reverseSnipeElo,
     });
 
     return {
