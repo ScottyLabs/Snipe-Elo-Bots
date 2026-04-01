@@ -1,7 +1,7 @@
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
 import { bountyEnv } from "./bountyEnv";
 import type { EloDb } from "./db";
-import * as L from "./voiceLemuen";
+import { L } from "./voice";
 
 export function formatBountyStatusMessage(params: {
   platform: "slack" | "discord";

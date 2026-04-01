@@ -1,5 +1,5 @@
 import type { PairMatch, PlayerChange } from "../db";
-import * as L from "../voiceLemuen";
+import { L } from "../voice";
 
 export function formatSigned(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
@@ -23,10 +23,11 @@ export function formatSnipeConfirmation(params: {
 }): string {
   const { sniperId, pairMatches, playerChanges, kind, bountyFirstPairIndices } = params;
   const bountySet = new Set(bountyFirstPairIndices ?? []);
-  const header =
-    kind === "makeup"
-      ? `Mission accomplished—after a fashion. A makeup snipe is filed under ${mention(sniperId)}; the records are thorough, you see.`
-      : `Target accounted for. ${mention(sniperId)} may take the credit—the rest is bookkeeping.`;
+  const header = L.snipeConfirmationHeader({
+    kind,
+    sniperLabel: mention(sniperId),
+    discord: true,
+  });
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
@@ -35,7 +36,7 @@ export function formatSnipeConfirmation(params: {
 
   const bountyRows = pairMatches.filter((m) => bountySet.has(m.pairIdx));
   const cooldownRows = pairMatches.filter((m) => m.pairCooldownSkip);
-  const parts: string[] = [header, "", "Exchange of fire:", ...matchLines];
+  const parts: string[] = [header, "", L.snipeConfirmationExchangeHeading(), ...matchLines];
   if (bountyRows.length > 0) {
     const detail = L.snipeConfirmationBountyExchangeDetail("discord");
     parts.push(
@@ -54,7 +55,7 @@ export function formatSnipeConfirmation(params: {
       )
     );
   }
-  parts.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges));
+  parts.push("", L.snipeConfirmationStandingsHeading(), formatPlayerListElo(playerChanges));
   return parts.join("\n");
 }
 

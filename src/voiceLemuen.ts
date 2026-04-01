@@ -5,6 +5,34 @@
  * @see https://arknights.wiki.gg/wiki/Lemuen/Story
  */
 
+/** Extra lines under the help title; empty for default voice. */
+export function helpCommandPrologue(_platform: "slack" | "discord"): string {
+  return "";
+}
+
+export function snipeConfirmationHeader(params: {
+  kind: "snipe" | "makeup";
+  sniperLabel: string;
+  /** Discord copy uses a slightly different makeup lead-in. */
+  discord?: boolean;
+}): string {
+  if (params.kind === "makeup") {
+    if (params.discord) {
+      return `Mission accomplished—after a fashion. A makeup snipe is filed under ${params.sniperLabel}; the records are thorough, you see.`;
+    }
+    return `Mission accomplished. A makeup snipe is filed under ${params.sniperLabel}; the records are thorough, you see.`;
+  }
+  return `Target accounted for. ${params.sniperLabel} may take the credit—the rest is bookkeeping.`;
+}
+
+export function snipeConfirmationExchangeHeading(): string {
+  return "Exchange of fire:";
+}
+
+export function snipeConfirmationStandingsHeading(): string {
+  return "Standings—for the moment:";
+}
+
 export function wrongSnipeChannel(channelRef: string): string {
   return `We're not in the nest I use for that. Would you mind running it in ${channelRef}? I only keep score from the lane I've mapped.`;
 }

@@ -36,7 +36,7 @@ import {
   formatDurationLabel,
   parseDurationToMs,
 } from "./snipeDuel";
-import * as L from "./voiceLemuen";
+import { L } from "./voice";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
 import { applyManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
@@ -238,9 +238,10 @@ function slackHeadtoheadUploadErrorMessage(msg: string): string {
 
 function formatSlackHelpText(): string {
   const c = config.slackOps;
+  const helpPrologue = L.helpCommandPrologue("slack");
   return [
     "*Snipe ELO — Help*",
-    "",
+    ...(helpPrologue ? ["", helpPrologue, ""] : [""]),
     "*Core commands*",
     `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard (paged; use Prev/Next in the message).`,
     `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,

@@ -10,7 +10,7 @@ import {
   type SlackInfoClient,
 } from "./slackDisplayNames";
 import { bountyAutoAnnounceShouldSkip } from "./bountyManual";
-import * as L from "./voiceLemuen";
+import { L } from "./voice";
 
 type SlackBountyClient = SlackInfoClient & {
   chat: {

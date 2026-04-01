@@ -18,7 +18,7 @@ import {
 } from "discord.js";
 import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
-import * as L from "../voiceLemuen";
+import { L } from "../voice";
 import { discordConfig } from "./configDiscord";
 import {
   collectIdsForSnipeConfirmation,
@@ -167,9 +167,10 @@ async function buildDiscordLeaderboardPayload(
 function formatDiscordHelpText(guild: Guild, db: EloDb): string {
   const configuredCh = getGuildSnipeChannelId(db, guild.id);
   const snipeLane = configuredCh ? `<#${configuredCh}>` : "_not configured yet_";
+  const helpPrologue = L.helpCommandPrologue("discord");
   return [
     "**Snipe ELO — Help**",
-    "",
+    ...(helpPrologue ? ["", helpPrologue, ""] : [""]),
     "**Core commands**",
     "• `/leaderboard` / `/show_leaderboard` — post the standings (paged; Prev/Next on the message).",
     "• `/snipes [player]` — latest snipes as shooter and as target.",

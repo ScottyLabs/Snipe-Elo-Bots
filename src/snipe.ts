@@ -1,5 +1,5 @@
 import type { PairMatch, PlayerChange } from "./db";
-import * as L from "./voiceLemuen";
+import { L } from "./voice";
 
 export function formatSigned(n: number): string {
   const s = n >= 0 ? `+${n}` : `${n}`;
@@ -52,10 +52,10 @@ export function formatSnipeConfirmation(params: {
   } = params;
   const bountySet = new Set(bountyFirstPairIndices ?? []);
   const cooldownRows = pairMatches.filter((m) => m.pairCooldownSkip);
-  const header =
-    kind === "makeup"
-      ? `Mission accomplished. A makeup snipe is filed under ${nameOf(sniperId)}; the records are thorough, you see.`
-      : `Target accounted for. ${nameOf(sniperId)} may take the credit—the rest is bookkeeping.`;
+  const header = L.snipeConfirmationHeader({
+    kind,
+    sniperLabel: nameOf(sniperId),
+  });
 
   const matchLines = pairMatches.map((m) => {
     const snipedDelta = m.snipedAfter - m.snipedBefore;
@@ -92,7 +92,7 @@ export function formatSnipeConfirmation(params: {
       ...cooldownRows.map((m) => `- ${nameOf(m.sniperId)} vs ${nameOf(m.snipedId)}${cdDetail}`)
     );
   }
-  lines.push("", "Standings—for the moment:", formatPlayerListElo(playerChanges, nameOf));
+  lines.push("", L.snipeConfirmationStandingsHeading(), formatPlayerListElo(playerChanges, nameOf));
   if (duelAppend?.trim()) {
     lines.push("", duelAppend.trim());
   }
