@@ -7,11 +7,11 @@
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Um—commands and rules are in the blocks below. Weather on deck looks fine; shout if a lap time smells off~_"
+      "_Um—commands and rules are in the blocks below. Weather's fine outside. No dust cloud, and not a Catastrophe billow in sight~_"
     );
   }
   return (
-    "**Ray here.** Below: commands and rules. If something's kaput, tell me—I'll listen."
+    "**Ray here.** Below: commands and rules. Weather's fine outside. No dust cloud, and not a Catastrophe billow in sight."
   );
 }
 
@@ -36,15 +36,15 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Makeup snipe filed for ${params.sniperLabel}—paperwork's tidy. We're good.`;
+      return `Makeup snipe filed for ${params.sniperLabel}. This area's clear of danger for now. We're good.`;
     }
-    return `Makeup logged for ${params.sniperLabel}. Yeah, that's the lot.`;
+    return `Makeup logged for ${params.sniperLabel}. This area's clear of danger for now. Yeah, that's the lot.`;
   }
-  return `Sun's out on that one—${params.sniperLabel} takes the credit. Splits are on file.`;
+  return `Threat at my position—yeah, not anymore soon. ${params.sniperLabel} takes the credit. Splits are on file.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Tracks and exchange—visibility good:";
+  return "Tracks and exchange—fine visibility. I can see more than just danger:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
@@ -76,11 +76,11 @@ export function removesnipeNothingInThread(): string {
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Undone. Particulars are in the thread—weather's fine out here.`;
+  return `Undone. And that's as far as you go. Particulars are in the thread.`;
 }
 
 export function removesnipeFailed(error: string): string {
-  return `Um, undo didn't take: ${error}`;
+  return `Um, undo didn't take. Was I not meant to dodge that?: ${error}`;
 }
 
 /** Maps known DB errors to readable copy; keeps raw detail out of chat when we have a stable explanation. */
@@ -109,7 +109,7 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `On the board. Thread's got the long version—I'm your friend; I'll wait.`;
+  return `On the board. Thread's got the long version. Sun's out. What a beauty... Sandbeast, let's get home.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -129,7 +129,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Numbers updated, canvas too—we're green. Any problem, you'll solve it?`;
+  return `Numbers updated, canvas too—we're green. Doctor, you always been like this? Any problem, you'll solve it?`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -141,7 +141,7 @@ export function adjustEloForbidden(): string {
 }
 
 export function leaderboardFailed(error: string): string {
-  return `Roster fell over: ${error}. Might be comms—might be dust.`;
+  return `Roster fell over: ${error}. Comms might cut out. If things get grim, I'll leave the most discernible signs I can.`;
 }
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
@@ -190,11 +190,11 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel.`;
+  return `Accepted. I'm hearing movement. The clock is running — ${endsSummary}.`;
 }
 
 export function duelDeclinedPublic(): string {
-  return `Declined. No stake, no score—consider the challenge withdrawn.`;
+  return `Declined. I'm done rambling in the dark. Consider the challenge withdrawn.`;
 }
 
 export function duelCancelledByChallengerPublic(): string {
@@ -234,7 +234,7 @@ export function implicitSnipeOnlySelfDiscord(): string {
 }
 
 export function implicitSnipeProcessFailed(error: string): string {
-  return `Something fouled the shot: ${error}`;
+  return `Something fouled the shot. We'll have to expand the mine out... Got a lurking threat to handle: ${error}`;
 }
 
 export function snipeImplicitBotsOnlySlack(): string {

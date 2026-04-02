@@ -11,20 +11,20 @@
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Penguin Logistics delivery—you've got *Exusiai* on the desk, Leader! Commands and rules are in the blocks below. " +
+      "_Password: 'Long live the Penguin Empire.' You've got *Exusiai* on the desk, Leader! Commands and rules are in the blocks below. " +
       "Snipe *confirmations* flip the +/- for a good laugh (sniped \"wins\" on the receipt); *the scoreboard stays honest*. " +
       "Bounty 2× works the usual way. `removesnipe` is *off* on my shift—ask whoever holds the keys to put Lemuen back on the desk when you want undo back, alright?_"
     );
   }
   return (
-    "**Exusiai on comms, Leader!** Below: commands and rules. Snipe **confirmations** show a **mirrored** exchange for laughs; **real ELO** lives on **/leaderboard** and the scoreboard. " +
+    "**Password: 'Long live the Penguin Empire.' Exusiai on comms, Leader!** Below: commands and rules. Snipe **confirmations** show a **mirrored** exchange for laughs; **real ELO** lives on **/leaderboard** and the scoreboard. " +
     "**Bounty 2×** is normal. **`removesnipe` is disabled** while this voice is active—ask whoever holds the keys to put Lemuen back on the desk to turn undo back on, got it?"
   );
 }
 
 export function removesnipeDisabledAprilFools(): string | null {
   return (
-    "_No take-backs while *I'm* on the desk, Leader! `removesnipe` is parked—ask whoever holds the keys to put Lemuen back on the desk when you want the eraser back, alright?_"
+    "_Life is like a gun, sometimes it just jams! But no take-backs while *I'm* on the desk, Leader! `removesnipe` is parked—ask whoever holds the keys to put Lemuen back on the desk when you want the eraser back, alright?_"
   );
 }
 
@@ -47,7 +47,7 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup snipe logged under ${params.sniperLabel}—wouldn't leave a job half-delivered, Leader!`;
   }
-  return `Bullseye! Credit goes to ${params.sniperLabel}—the rest is bookkeeping (and maybe apple pie later~!)`;
+  return `Apple pie! Barrage! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -95,7 +95,7 @@ export function removesnipeUndoAckEphemeral(): string {
 }
 
 export function removesnipeFailed(error: string): string {
-  return `Gun jammed on that undo, Leader: ${error}`;
+  return `Life is like a gun, sometimes it just jams. Undo failed, Leader: ${error}`;
 }
 
 export function formatRemovesnipeError(error: string): string {
@@ -119,7 +119,7 @@ export function makeupParseSniperFail(): string {
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
-  return `${callerDisplayName} called \`${slashCommand}\`! Paperwork incoming in the thread—rock n' roll, Leader~`;
+  return `${callerDisplayName} called \`${slashCommand}\`! Paperwork incoming in the thread—rock n' roll, Leader!`;
 }
 
 export function makeupSuccessEphemeral(): string {
@@ -143,11 +143,11 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Books updated, canvas refreshed—keep it sporting out there, Leader!`;
+  return `Books updated, canvas refreshed—perfect! Let's keep up the momentum and charge on, Leader!`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
-  return `\`${slashCommand}\` wouldn't chamber, Leader: ${error}`;
+  return `\`${slashCommand}\` wouldn't chamber. Sometimes it just jams, Leader: ${error}`;
 }
 
 export function adjustEloForbidden(): string {
@@ -191,7 +191,7 @@ export function snipeDuelTargetBot(): string {
 }
 
 export function snipeDuelPostedEphemeral(): string {
-  return `Challenge's live, Leader! They accept or decline in the thread—you can \`cancelduel\` there if you get cold feet!`;
+  return `Challenge's live, Leader! They accept or decline in the thread—you can \`cancelduel\` there if you get cold feet. Let me double their trouble!`;
 }
 
 export function snipeDuelFailed(error: string): string {
@@ -203,7 +203,7 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted! Clock's running — ${endsSummary}. Snipes between you two count for the duel—let's go, Leader!`;
+  return `Accepted! Clock's running — ${endsSummary}. Snipes between you two count for the duel—take them all by storm, Leader!`;
 }
 
 export function duelDeclinedPublic(): string {
@@ -270,7 +270,7 @@ export function discordModeratorOnlyCommand(): string {
 }
 
 export function discordSnipeChannelSet(channelRef: string): string {
-  return `Roger! This server's snipe lane is now ${channelRef}. I'll keep score there—locked and loaded, Leader!`;
+  return `Roger! This server's snipe lane is now ${channelRef}. I'll keep score there—locked and loaded, ready for action, Leader!`;
 }
 
 export function bountyDailyAnnouncementSlack(params: { dateLabel: string; rankedLines: string[] }): string {
@@ -294,11 +294,11 @@ export function bountyDailyAnnouncementDiscord(params: { dateLabel: string; rank
 }
 
 export function bountyDailyNoTargetsSlack(dateLabel: string): string {
-  return `*Daily bounty* — ${dateLabel}\nNot enough humans on the board for a mark list today, Leader—we'll party when the roster fills up!`;
+  return `*Daily bounty* — ${dateLabel}\nNot enough humans on the board for a mark list today, Leader—we'll throw a party when the roster fills up!`;
 }
 
 export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
-  return `**Daily bounty** — ${dateLabel}\nNot enough humans on the board for a mark list today, Leader—we'll party when the roster fills up!`;
+  return `**Daily bounty** — ${dateLabel}\nNot enough humans on the board for a mark list today, Leader—we'll throw a party when the roster fills up!`;
 }
 
 export function snipeConfirmationBountySectionTitle(singleExchange: boolean): string {

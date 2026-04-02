@@ -40,11 +40,11 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup for ${params.sniperLabel}? Logged. The sands don't miss a step.`;
   }
-  return `Bam—target marked. ${params.sniperLabel} claims the prize; the tally's written in the dunes.`;
+  return `Bam! I've swallowed up the sun! ${params.sniperLabel} claims the prize; the tally's written in the dunes.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Blades in the wind—the exchange:";
+  return "What do you fear most? The exchange:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
@@ -109,7 +109,7 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Carved in stone. Thread's got the full haul—man, everyone's so eager for treasure today.`;
+  return `Carved in stone. Thread's got the full haul—man, everyone's so eager for treasure today. What, you think you're a better robber than ME?`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -190,7 +190,7 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. The sun is high, the clock is running — ${endsSummary}. Every snipe counts now. Haha!`;
+  return `Accepted. The sun is high, the clock is running — ${endsSummary}. Enough dreaming. Only nightmares come with me. Haha!`;
 }
 
 export function duelDeclinedPublic(): string {

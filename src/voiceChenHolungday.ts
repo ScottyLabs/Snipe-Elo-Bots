@@ -40,15 +40,15 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup for ${params.sniperLabel}. Filed. Above board.`;
   }
-  return `That's a wrap. ${params.sniperLabel} gets credit. I've filed the dull parts too.`;
+  return `Hmph! That's a wrap. ${params.sniperLabel} gets credit. Don't let them get away!`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Incident summary. Suppressing fire:";
+  return "Incident summary. Laying suppressive fire:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Standings for now. Buck up:";
+  return "Standings for now. Time is limited:";
 }
 
 /** No-op for default voice; Exusiai appends a mirror disclaimer on snipe confirmations. */
@@ -109,7 +109,7 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Filed. Thread has the rest. Beautiful teamwork when you lot actually read it.`;
+  return `Filed. Thread has the rest. Beautiful teamwork when you lot actually read it. Don't let them get away!`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -190,7 +190,7 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel.`;
+  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel. Time is limited.`;
 }
 
 export function duelDeclinedPublic(): string {

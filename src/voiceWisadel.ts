@@ -41,7 +41,7 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup snipe? Logged under ${params.sniperLabel}. Don't make me type it twice, Doctor.`;
   }
-  return `Boom—tagged. ${params.sniperLabel} keeps the credit; I keep the receipt. Too bad, so sad. Not even ashes left.`;
+  return `Boom! Who says there's always a countdown? ${params.sniperLabel} keeps the credit. Poor little guy. It's your unlucky day... Not even ashes left.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -130,7 +130,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Books and canvas went *boom*—updated, I mean. Try not to need me to audit you.`;
+  return `Look at all the assholes we buried along the way. Books and canvas went *boom*—updated. Try not to need me to audit you.`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -440,7 +440,7 @@ export function setBountyFailed(context: string, msg: string): string {
 }
 
 export function setBountySuccessEphemeral(): string {
-  return "Posted today's bounty marks to the channel—the midnight auto-list won't replace them until the calendar turns.";
+  return "Posted today's bounty marks to the channel. Now now, wait in line. We got plenty for everyone.";
 }
 
 export function adjustBountyUsage(slashPath: string): string {
@@ -557,7 +557,7 @@ export function adjustBountyPublicClaim(
 }
 
 export function adjustBountySuccessEphemeral(): string {
-  return "Posted the bounty ledger change to the channel.";
+  return "Posted the bounty ledger change to the channel. Whose turn is it to get blown to bits today?";
 }
 
 export function adjustBountyFailed(context: string, error: string): string {

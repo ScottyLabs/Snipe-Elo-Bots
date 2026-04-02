@@ -41,11 +41,11 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `A belated hit, but it counts. I've filed the makeup snipe under ${params.sniperLabel}; my records are quite thorough, you see~`;
+      return `A belated hit, but it counts. I've filed the makeup snipe under ${params.sniperLabel}; may the Lord bless your aim~`;
     }
-    return `A belated hit, but it counts. I've filed the makeup snipe under ${params.sniperLabel}; my records are quite thorough, you see~`;
+    return `A belated hit, but it counts. I've filed the makeup snipe under ${params.sniperLabel}; may the Lord bless your aim~`;
   }
-  return `Target acquired and accounted for. ${params.sniperLabel} takes the credit—the rest is just paperwork.`;
+  return `A precise shot. ${params.sniperLabel} takes the credit—the rest is just paperwork.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -81,7 +81,7 @@ export function removesnipeNothingInThread(): string {
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Done. I've left the amended paperwork in the thread—do review it when you have a moment~`;
+  return `Done. I've left the amended paperwork in the thread—do review it when you have a moment. May the Lord bless your aim~`;
 }
 
 export function removesnipeFailed(error: string): string {
@@ -133,7 +133,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `The ledger is updated and the board refreshed. Let's try to keep things sporting from here on out, shall we?`;
+  return `The ledger is updated and the board refreshed. A precise adjustment. Let's try to keep things sporting from here on out, shall we?`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {

@@ -7,12 +7,12 @@
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Tjena. The rules of the hunt are below. Read them carefully. The snow doesn't forgive mistakes. " +
-      "Stay close to me, don't wander off into the shadows._"
+      "_Tjena. Time to choose our prey. The rules of the hunt are below. Read them carefully. " +
+      "Stay close, don't run off into the shadows._"
     );
   }
   return (
-    "**Tjena.** The rules of the hunt are below. Read them carefully. The snow doesn't forgive mistakes. Stay close to me, don't wander off into the shadows."
+    "**Tjena.** Time to choose our prey. The rules of the hunt are below. Read them carefully. Stay close, don't run off into the shadows."
   );
 }
 
@@ -37,11 +37,11 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Makeup shot for ${params.sniperLabel}. The prey was caught. Schysst.`;
+      return `Makeup shot for ${params.sniperLabel}. I see you managed to complete a mission without causing any unnecessary pain to the quarry. Schysst.`;
     }
-    return `Makeup shot for ${params.sniperLabel}. The prey was caught. Schysst.`;
+    return `Makeup shot for ${params.sniperLabel}. I see you managed to complete a mission without causing any unnecessary pain to the quarry. Schysst.`;
   }
-  return `A clean hit. ${params.sniperLabel} claims the prey. The snow remembers. Schysst.`;
+  return `I'll pin you to your shadow. ${params.sniperLabel} claims the prey. The snow remembers. Schysst.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -58,7 +58,7 @@ export function snipeConfirmationAprilFoolsMirrorDisclaimer(_platform: "slack" |
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `Nähä. Wrong hunting ground. The prey is tracked in ${channelRef}. Follow me there.`;
+  return `Nähä. Get out of my home! The prey is tracked in ${channelRef}. Follow me there.`;
 }
 
 export function serverNotConfigured(): string {
@@ -77,11 +77,11 @@ export function removesnipeNothingInThread(): string {
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Track erased. The snow covers it. Look in the thread.`;
+  return `Track erased. Nature should not be disturbed. Look in the thread.`;
 }
 
 export function removesnipeFailed(error: string): string {
-  return `Nähä. The snow won't yield: ${error}`;
+  return `Nähä. You'll have to be faster than that to even think about faking an attack: ${error}`;
 }
 
 /** Maps known DB errors to readable copy; keeps raw detail out of chat when we have a stable explanation. */
@@ -110,7 +110,7 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `The prey is logged. The thread has the rest. Rest by the fire now.`;
+  return `The prey is logged. The thread has the rest. Sip a hot drink and get some rest.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -191,15 +191,15 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `The hunt begins. The storm rages until ${endsSummary}. May the best hunter win.`;
+  return `Cowards break the silence first. The storm rages until ${endsSummary}. May the best hunter win.`;
 }
 
 export function duelDeclinedPublic(): string {
-  return `The prey fled. The challenge is over. The snow settles.`;
+  return `The prey fled. If you've let your target escape, then you should give up the chase.`;
 }
 
 export function duelCancelledByChallengerPublic(): string {
-  return `The hunter withdrew. The challenge is dead in the snow.`;
+  return `The hunter withdrew. You've already lost.`;
 }
 
 /** Non-initiator typed cancelduel (includes challenged party—use declineduel). */
@@ -235,7 +235,7 @@ export function implicitSnipeOnlySelfDiscord(): string {
 }
 
 export function implicitSnipeProcessFailed(error: string): string {
-  return `The trap failed: ${error}`;
+  return `Grasp these seeds tightly in your hand, and run. The trap failed: ${error}`;
 }
 
 export function snipeImplicitBotsOnlySlack(): string {

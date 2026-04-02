@@ -40,11 +40,11 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup indexed under ${params.sniperLabel}. The prose is… serviceable. Ahem.`;
   }
-  return `Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`;
+  return `Hff... haa... Fire! Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Passage — bolt pierces deeper than nib, here:";
+  return "Passage — bolt pierces deeper than nib on the battlefield, here:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
@@ -109,7 +109,7 @@ export function makeupRootMessage(callerDisplayName: string, slashCommand: strin
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Logged, Doctor. The fuller draft is threaded beneath—please review it when you're able.`;
+  return `Logged, Doctor. The fuller draft is threaded beneath—abandon resistance now, or I pull the trigger!`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -190,7 +190,7 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel, Doctor.`;
+  return `Accepted. The clock is running — ${endsSummary}. For a life of peace...! Snipes between you two count toward the duel, Doctor.`;
 }
 
 export function duelDeclinedPublic(): string {
