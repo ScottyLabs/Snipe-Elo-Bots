@@ -1,5 +1,37 @@
 import type { PairMatch, PlayerChange } from "./db";
-import { L } from "./voice";
+import { isExusiaiVoiceActive, L } from "./voice";
+
+/**
+ * Exusiai voice: show snipe confirmations with gains/losses mirrored, while `applySnipe` stores real ELO.
+ * Cooldown rows (zero transfer) pass through unchanged.
+ */
+export function mirrorExusiaiAprilFoolsSnipeDisplay(
+  pairMatches: PairMatch[],
+  playerChanges: PlayerChange[]
+): { pairMatches: PairMatch[]; playerChanges: PlayerChange[] } {
+  if (!isExusiaiVoiceActive()) {
+    return { pairMatches, playerChanges };
+  }
+  const mirroredPairs = pairMatches.map((m) => {
+    if (m.pairCooldownSkip) {
+      return m;
+    }
+    const sniperDa = m.sniperAfter - m.sniperBefore;
+    const snipedDa = m.snipedAfter - m.snipedBefore;
+    return {
+      ...m,
+      sniperAfter: m.sniperBefore - sniperDa,
+      snipedAfter: m.snipedBefore - snipedDa,
+      sniperDelta: -m.sniperDelta,
+    };
+  });
+  const mirroredChanges = playerChanges.map((c) => ({
+    ...c,
+    afterRating: c.beforeRating - c.delta,
+    delta: -c.delta,
+  }));
+  return { pairMatches: mirroredPairs, playerChanges: mirroredChanges };
+}
 
 export function formatSigned(n: number): string {
   const s = n >= 0 ? `+${n}` : `${n}`;
@@ -95,6 +127,11 @@ export function formatSnipeConfirmation(params: {
   lines.push("", L.snipeConfirmationStandingsHeading(), formatPlayerListElo(playerChanges, nameOf));
   if (duelAppend?.trim()) {
     lines.push("", duelAppend.trim());
+  }
+  if (isExusiaiVoiceActive()) {
+    const plat = discordBountyHeading ? "discord" : "slack";
+    const note = L.snipeConfirmationAprilFoolsMirrorDisclaimer(plat);
+    if (note) lines.push("", note);
   }
   return lines.join("\n");
 }

@@ -25,6 +25,7 @@ import {
   formatAdjustEloConfirmation,
   formatSnipeConfirmation,
   formatUndoConfirmation,
+  mirrorExusiaiAprilFoolsSnipeDisplay,
 } from "../snipe";
 import { collectMentionedUserIds, messageHasImageAttachment, parseMentionedUserIdsFromContent } from "./parseDiscord";
 import {
@@ -34,7 +35,7 @@ import {
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "../bounty";
-import { appendManualBountyTargets, applyManualBountyTargets } from "../bountyManual";
+import { appendManualBountyTargets, applyManualBountyTargets, removeManualBountyTargets } from "../bountyManual";
 import { bountyEnv } from "../bountyEnv";
 import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
@@ -184,7 +185,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     L.helpSnipeUndoLineDiscord(),
     "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
     "• `/setbounty <@marks…>` — set today's bounty marks (moderators); auto midnight list won't overwrite until tomorrow.",
-    "• `/adjustbounty` — edit today's first-snipe / 2× ledger (`unclaim`, `clear`, `claim`) or append marks with `add` (moderators).",
+    "• `/adjustbounty` — edit today's first-snipe / 2× ledger (`unclaim`, `clear`, `claim`), append marks (`add`), or drop marks from the list (`remove`) (moderators).",
     "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
     "",
     "**Implicit snipe rule**",
@@ -242,7 +243,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       await args.sourceMessage.react(DART).catch(() => {});
     }
 
-    const ids = collectIdsForSnipeConfirmation(args.sniperId, result.pairMatches, result.playerChanges);
+    const { pairMatches: displayPairMatches, playerChanges: displayPlayerChanges } =
+      mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
+    const ids = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
     const names = await resolveDiscordDisplayNames(args.guild, ids);
     const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
 
@@ -272,8 +275,8 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     const text = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
-      pairMatches: result.pairMatches,
-      playerChanges: result.playerChanges,
+      pairMatches: displayPairMatches,
+      playerChanges: displayPlayerChanges,
       nameOf,
       duelAppend,
       bountyFirstPairIndices: result.bountyFirstPairIndices,
@@ -399,6 +402,14 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             .setDescription("Append bounty marks to today's list (up to BOUNTY_TOP_N total)")
             .addStringOption((o) =>
               o.setName("marks").setDescription("Ping each mark to add, e.g. @alice @bob").setRequired(true)
+            )
+        )
+        .addSubcommand((sc) =>
+          sc
+            .setName("remove")
+            .setDescription("Remove bounty marks from today's list (and clear their first-snipe claims)")
+            .addStringOption((o) =>
+              o.setName("marks").setDescription("Ping each mark to remove, e.g. @alice @bob").setRequired(true)
             )
         )
         .addSubcommand((sc) =>
@@ -1126,6 +1137,72 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
               return;
             }
             await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgAdd) });
+          }
+          return;
+        }
+
+        if (subAb === "remove") {
+          const marksRawRm = interaction.options.getString("marks", true);
+          const idsRm = parseMentionedUserIdsFromContent(marksRawRm);
+          if (idsRm.length === 0) {
+            await interaction.editReply({ content: L.adjustBountyRemoveNeedMentions() });
+            return;
+          }
+          for (const id of idsRm) {
+            const u = await interaction.client.users.fetch(id).catch(() => null);
+            if (!u || u.bot) {
+              await interaction.editReply({ content: L.setBountyNoMentions() });
+              return;
+            }
+          }
+          try {
+            const { dateKey: rmDk, targetIds: targetIdsRm, actuallyRemoved } = removeManualBountyTargets({
+              db,
+              guildId: guildIdAb,
+              removeTargetIds: idsRm,
+            });
+            const rmDl = formatBountyDateLabel(rmDk, bountyEnv.timezone);
+            let contentRm: string;
+            if (targetIdsRm.length === 0) {
+              contentRm =
+                L.adjustBountyListEmptyAfterRemove("discord", rmDl) +
+                "\n\n" +
+                L.setBountyOperatorFooter("discord");
+            } else {
+              const nameMapRm = await resolveDiscordDisplayNames(interaction.guild, targetIdsRm);
+              const rankedLinesRm = targetIdsRm.map((id) => escapeDiscordMarkdownChunk(nameMapRm.get(id) ?? id));
+              contentRm =
+                L.bountyDailyAnnouncementDiscord({ dateLabel: rmDl, rankedLines: rankedLinesRm }) +
+                "\n\n" +
+                L.setBountyOperatorFooter("discord");
+            }
+            await interaction.editReply({ content: contentRm });
+            opsLog("discord.adjustbounty.remove", {
+              guildId: guildIdAb,
+              actorId: interaction.user.id,
+              dateKey: rmDk,
+              removedCount: actuallyRemoved.length,
+              totalCount: targetIdsRm.length,
+            });
+          } catch (eRm: unknown) {
+            const msgRm = eRm instanceof Error ? eRm.message : String(eRm);
+            if (msgRm === "bounty_disabled") {
+              await interaction.editReply({ content: L.setBountyDisabled("discord") });
+              return;
+            }
+            if (msgRm === "no_marks") {
+              await interaction.editReply({ content: L.adjustBountyRemoveNeedMentions() });
+              return;
+            }
+            if (msgRm === "bounty_no_list_today") {
+              await interaction.editReply({ content: L.adjustBountyRemoveNoListToday() });
+              return;
+            }
+            if (msgRm === "bounty_remove_none_on_list") {
+              await interaction.editReply({ content: L.adjustBountyRemoveNoneOnList() });
+              return;
+            }
+            await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgRm) });
           }
           return;
         }

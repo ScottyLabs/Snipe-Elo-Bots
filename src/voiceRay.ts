@@ -1,22 +1,19 @@
 /**
- * User-facing lines in Lemuen's voice (Arknights): cordial, precise, lightly edged—
- * polite requests that still expect compliance; occasional warmth or “~”; paperwork and aim metaphors.
- * @see https://arknights.wiki.gg/wiki/Lemuen/Dialogue
- * @see https://arknights.wiki.gg/wiki/Lemuen/Story
+ * Ray / Iwona Goldenlobster (Arknights): sunny Kazimierz racer energy—warm, casual, a little flashy, "we've got this!"
+ * @see https://arknights.wiki.gg/wiki/Ray/Dialogue
+ * @see https://arknights.wiki.gg/wiki/Ray/Story
+ * @see https://arknights.wiki.gg/wiki/Ray/File
  */
 
-/** Extra lines under the help title (post–April Fools: console back from her sister's little holiday). */
+/** Short intro line under the /help title. */
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_April Fools is behind us—I've *reclaimed* my console from my sister's… *enthusiastic* custody. " +
-      "The keys are mine again, the scoring runs *straight*, and undo is back on the books. " +
-      "If anything still looks off, say the word and we'll audit it properly~_"
+      "_Pit wall's open—commands and rules in the next blocks. Wave if a lap time looks bogus~_"
     );
   }
   return (
-    "**April Fools has ended.** I've **retrieved** my console from my sister's brief reign—charming as she was, " +
-    "the board belongs on my desk again. ELO and **removesnipe** behave as usual; if you spot a stray oddity from the holiday, we'll set it right."
+    "**Pit note:** everything you need is below—holler if the scoring looks off."
   );
 }
 
@@ -41,19 +38,19 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Mission accomplished—after a fashion. A makeup snipe is filed under ${params.sniperLabel}; the records are thorough, you see.`;
+      return `Makeup snipe filed under ${params.sniperLabel}—paperwork's polished, we're good!`;
     }
-    return `Mission accomplished. A makeup snipe is filed under ${params.sniperLabel}; the records are thorough, you see.`;
+    return `Makeup snipe logged for ${params.sniperLabel}—all tidy in the binder~`;
   }
-  return `Target accounted for. ${params.sniperLabel} may take the credit—the rest is bookkeeping.`;
+  return `That's a finish—${params.sniperLabel} takes the credit! I've got the splits on file~`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Exchange of fire:";
+  return "Split times — exchange:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Standings—for the moment:";
+  return "Leaderboard snapshot:";
 }
 
 /** No-op for default voice; Exusiai appends a mirror disclaimer on snipe confirmations. */
@@ -62,11 +59,11 @@ export function snipeConfirmationAprilFoolsMirrorDisclaimer(_platform: "slack" |
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `We're not in the nest I use for that. Would you mind running it in ${channelRef}? I only keep score from the lane I've mapped.`;
+  return `Whoa, wrong pit—I'm only timing the official lane. Hop over to ${channelRef}!`;
 }
 
 export function serverNotConfigured(): string {
-  return `This place isn't on my chart yet—no snipe lane drawn. Someone with the keys will need to wire that up first.`;
+  return `Track's not on the schedule yet—mods need to lay the snipe lane in first!`;
 }
 
 export function removesnipeNeedSlackThread(): string {
@@ -77,11 +74,11 @@ export function removesnipeNeedSlackThread(): string {
 }
 
 export function removesnipeNothingInThread(): string {
-  return `Nothing to undo here. The page is either already clean, or we're reading the wrong one.`;
+  return `No lap to scrub—either clean sheet or wrong garage~`;
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Done. I've left the particulars in the thread—review them when you have a moment.`;
+  return `Undone—story's in the thread, grab a drink~`;
 }
 
 export function removesnipeFailed(error: string): string {
@@ -110,11 +107,11 @@ export function makeupParseSniperFail(): string {
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
-  return `${callerDisplayName} called \`${slashCommand}\`. The paperwork follows in the thread~`;
+  return `${callerDisplayName} called \`${slashCommand}\`—full telemetry's threading now~`;
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Logged. You'll find the full reckoning threaded under that new message—kindly look it over when you're free.`;
+  return `On the board! Check the thread for the pretty version~`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -134,7 +131,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `The books are updated and the canvas refreshed. Try to keep things sporting—shall we call that settled?`;
+  return `Numbers updated, canvas refreshed—we're green~`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -142,7 +139,7 @@ export function adjustCommandFailed(slashCommand: string, error: string): string
 }
 
 export function adjustEloForbidden(): string {
-  return `That lever isn't on your console—manual ELO edits aren't for this seat. Kindly leave the bookkeeping to those authorized.`;
+  return `That adjust is crew-chief only—hands off the torque wrench~`;
 }
 
 export function leaderboardFailed(error: string): string {
@@ -217,7 +214,7 @@ export function duelCancelNotChallenger(): string {
 }
 
 export function leaderboardEmptyFallback(): string {
-  return "_The board's quiet—no scores yet. That can change in a heartbeat._";
+  return "_Quiet grid—nobody's posted a time yet. First one's gonna feel *chef's kiss*._";
 }
 
 export function discordInvalidConfirmationId(): string {
@@ -596,8 +593,8 @@ export function graphCodeEphemeralSlack(params: { code: string; siteUrl: string;
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
-  help: "Open the field manual: commands, rules, and the quick paths.",
-  leaderboard: "Survey the standings—who's ahead today?",
+  help: "Pit manual: commands, rules, how we keep score fair.",
+  leaderboard: "Who's P1 on the board today?",
   show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",

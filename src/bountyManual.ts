@@ -76,3 +76,52 @@ export function appendManualBountyTargets(args: {
 
   return { dateKey, targetIds: capped, truncated, actuallyAdded };
 }
+
+/**
+ * Remove bounty marks from today's list (any that appear in both the list and `removeTargetIds`).
+ * Drops matching first-snipe claims so 2× state stays consistent. Sets the manual lock for today.
+ */
+export function removeManualBountyTargets(args: {
+  db: EloDb;
+  guildId: string;
+  removeTargetIds: string[];
+  nowMs?: number;
+}): { dateKey: string; targetIds: string[]; actuallyRemoved: string[] } {
+  if (!bountyEnv.enabled) {
+    throw new Error("bounty_disabled");
+  }
+  const uniq = [...new Set(args.removeTargetIds.filter(Boolean))];
+  if (uniq.length === 0) {
+    throw new Error("no_marks");
+  }
+
+  const now = args.nowMs ?? Date.now();
+  const dateKey = calendarDateKeyInTimeZone(now, bountyEnv.timezone);
+  const row = args.db.getDailyBountyAnnouncementRow(args.guildId, dateKey);
+  const existing = row?.targetIds ?? [];
+  if (existing.length === 0) {
+    throw new Error("bounty_no_list_today");
+  }
+
+  const removeSet = new Set(uniq);
+  const actuallyRemoved = uniq.filter((id) => existing.includes(id));
+  if (actuallyRemoved.length === 0) {
+    throw new Error("bounty_remove_none_on_list");
+  }
+
+  const next = existing.filter((id) => !removeSet.has(id));
+  for (const id of actuallyRemoved) {
+    args.db.deleteBountyFirstSnipeClaim({
+      guildId: args.guildId,
+      bountyDate: dateKey,
+      bountyTargetId: id,
+    });
+  }
+  if (next.length > 0) {
+    args.db.ensurePlayers(args.guildId, next);
+  }
+  args.db.upsertDailyBountyTargets(args.guildId, dateKey, next, Date.now());
+  args.db.setMeta(args.guildId, BOUNTY_MANUAL_DATE_META_KEY, dateKey);
+
+  return { dateKey, targetIds: next, actuallyRemoved };
+}

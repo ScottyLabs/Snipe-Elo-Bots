@@ -1,6 +1,6 @@
 /**
- * April Fools / alt voice: Exusiai from Arknights — upbeat, guns-and-apple-pie energy,
- * Penguin Logistics swagger, "Leader!", party/hip-hop cadence, never mean-spirited.
+ * Alt operator voice: Exusiai from Arknights — upbeat, guns-and-apple-pie energy,
+ * Penguin Logistics swagger, "Leader!", party cadence; mirrored snipe confirmations for fun.
  * @see https://arknights.wiki.gg/wiki/Exusiai/Dialogue
  * @see https://arknights.wiki.gg/wiki/Exusiai_the_New_Covenant/Dialogue
  * @see https://arknights.wiki.gg/wiki/Exusiai/Story
@@ -11,31 +11,29 @@
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_April Fools heist: Lemuen left her *console* unattended—just for a breath—and I *borrowed* the keys. " +
-      "Fair's fair, she'll repo the desk tomorrow; until then you're stuck with *my* readout. " +
-      "Snipe ELO's *flipped* (tagged player *gains* off the shooter); bounty 2× still tracks the mark; undo's on holiday. " +
-      "Say hi to your operator of the day—and don't tell sis I called it a heist~_"
+      "_Penguin Logistics delivery—you've got *Exusiai* on the desk! Commands and rules are in the blocks below. " +
+      "Snipe *confirmations* flip the +/- for fun (sniped \"wins\" on the receipt); *leaderboard and DB stay honest*. " +
+      "Bounty 2× works the usual way. `removesnipe` is *off* on my shift—switch `BOT_VOICE` back to Lemuen when you want undo back~_"
     );
   }
   return (
-    "**April Fools — console acquired.** Lemuen stepped away from her rig; **Exusiai** *definitely* didn't slide the whole board over to her side of the legend. " +
-    "She reclaims it after the joke. Until then: snipe ELO is **flipped** (sniped **gains** from shooter), bounty **2×** still applies to the mark, and **removesnipe** stays off. " +
-    "You're on *my* channel now, Leader—enjoy the chaos."
+    "**Exusiai on comms.** Below: commands and rules. Snipe **confirmations** show a **mirrored** exchange for laughs; **real ELO** lives on **/leaderboard** and in the database. " +
+    "**Bounty 2×** is normal. **`removesnipe` is disabled** while this voice is active—use default Lemuen voice to turn undo back on."
   );
 }
 
 export function removesnipeDisabledAprilFools(): string | null {
   return (
-    "_April Fools—no take-backs while I'm on the desk, Leader! `removesnipe` is on vacation; my sis brings the eraser when she's back~_"
+    "_No take-backs while *I'm* on the desk, Leader! `removesnipe` is parked—flip `BOT_VOICE` to Lemuen when you want the eraser back~_"
   );
 }
 
 export function helpSnipeUndoLineSlack(slashUndo: string, plainUndo: string): string {
-  return `• \`${slashUndo}\` / plain \`${plainUndo}\` — *off for April Fools* (what's logged stays logged on my shift!).`;
+  return `• \`${slashUndo}\` / plain \`${plainUndo}\` — *off in Exusiai voice* (DB ELO is real; only the confirmation ticker is backwards).`;
 }
 
 export function helpSnipeUndoLineDiscord(): string {
-  return "• `/removesnipe` — *disabled for April Fools* (Exusiai doesn't do refunds—Lemuen restores this later).";
+  return "• `/removesnipe` — *off while Exusiai voice is active* (switch `BOT_VOICE` to Lemuen to enable undo).";
 }
 
 export function snipeConfirmationHeader(params: {
@@ -53,11 +51,24 @@ export function snipeConfirmationHeader(params: {
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Exchange of fire:";
+  return "Exchange of fire — *mirror readout (Exusiai ticker)*:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Standings—hot off the press:";
+  return "Standings — *mirrored here* (leaderboard & DB are honest):";
+}
+
+export function snipeConfirmationAprilFoolsMirrorDisclaimer(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return (
+      "_Fine print: every +/- and rating line *above* is *mirrored* on purpose—my ticker runs backwards for fun. " +
+      "The shooter still banked the real points—peek `/leaderboard` or the DB if you want the boring truth~_"
+    );
+  }
+  return (
+    "*Fine print:* the block above is a **mirrored readout** for Exusiai voice. " +
+    "**Real ELO** is on **/leaderboard** and in the database—the shooter earned it for real."
+  );
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
@@ -446,12 +457,12 @@ export function setBountySuccessEphemeral(): string {
 export function adjustBountyUsage(slashPath: string): string {
   return (
     `Format: \`${slashPath}\` \`unclaim\` <@mark> · \`${slashPath}\` \`clear\` · \`${slashPath}\` \`claim\` <@sniper> <@mark> · ` +
-    `\`${slashPath}\` \`add\` <@mark> … — bolt extra marks on (deduped, BOUNTY_TOP_N cap). Same keys as adjustelo.`
+    `\`${slashPath}\` \`add\` <@mark> … · \`${slashPath}\` \`remove\` <@mark> … — tack marks on or scratch 'em off the board (BOUNTY_TOP_N still applies to adds). Same keys as adjustelo.`
   );
 }
 
 export function adjustBountyUnknownSubcommand(): string {
-  return "Need `unclaim`, `clear`, `claim`, or `add`—peek `/help` for the cheat sheet, Leader!";
+  return "Need `unclaim`, `clear`, `claim`, `add`, or `remove`—peek `/help` for the cheat sheet, Leader!";
 }
 
 export function adjustBountyAddNeedMentions(): string {
@@ -460,6 +471,31 @@ export function adjustBountyAddNeedMentions(): string {
 
 export function adjustBountyNoNewMarks(): string {
   return "Those folks are already on today's bounty board—nothing fresh to tack on!";
+}
+
+export function adjustBountyRemoveNeedMentions(): string {
+  return "`remove` needs at least one human ping—who're we erasing from the wanted poster?";
+}
+
+export function adjustBountyRemoveNoListToday(): string {
+  return "No bounty board up today (or it's blank)—nothing to scrub off yet!";
+}
+
+export function adjustBountyRemoveNoneOnList(): string {
+  return "Nobody you tagged is actually on today's list—wrong faces on the dartboard, Leader!";
+}
+
+export function adjustBountyListEmptyAfterRemove(platform: "slack" | "discord", dateLabel: string): string {
+  if (platform === "slack") {
+    return (
+      `*Daily bounty* — ${dateLabel}\n` +
+      `_Wiped the slate—no marks left. Load a fresh list with setbounty or \`add\` when you're ready to party~_`
+    );
+  }
+  return (
+    `**Daily bounty** — ${dateLabel}\n` +
+    `*Wiped the slate—no marks left. Load a fresh list with setbounty or \`add\` when you're ready to party~*`
+  );
 }
 
 export function adjustBountyNoMarkForUnclaim(): string {
@@ -560,11 +596,11 @@ export const discordSlashDescriptions = {
   help: "Field manual: commands, rules, quick paths—Sup, Leader!",
   leaderboard: "Who's topping the charts? Post the ELO board!",
   show_leaderboard: "Same as /leaderboard—standings right here, rock n' roll.",
-  removesnipe: "April Fools: disabled—Lemuen restores undo later.",
+  removesnipe: "Disabled in Exusiai voice—use Lemuen voice to enable undo.",
   makeupsnipe: "Backfill a snipe the camera missed—Penguin Logistics paperwork!",
   adjustelo: "Hand-tune someone's rating—use sparingly, authorized only.",
   setbounty: "Set today's bounty marks (@mentions). Same keys as adjustelo.",
-  adjustbounty: "Twiddle today's first-snipe / 2× ledger or slap on marks: unclaim, clear, claim, add (mods).",
+  adjustbounty: "Ledger, slap marks on, or scrub 'em off: unclaim, clear, claim, add, remove (mods).",
   setsnipechannel: "Point this server's snipe channel here (mods).",
   snipes: "Last five shots fired, last five caught—optional user; default you.",
   headtohead: "Everyone vs everyone snipe counts—matrix style.",

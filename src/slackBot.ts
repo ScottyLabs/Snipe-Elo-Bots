@@ -7,6 +7,7 @@ import {
   collectIdsForSnipeConfirmation,
   formatAdjustEloConfirmation,
   formatSnipeConfirmation,
+  mirrorExusiaiAprilFoolsSnipeDisplay,
   formatUndoConfirmation,
 } from "./snipe";
 import {
@@ -38,7 +39,7 @@ import {
 } from "./snipeDuel";
 import { L } from "./voice";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
-import { appendManualBountyTargets, applyManualBountyTargets } from "./bountyManual";
+import { appendManualBountyTargets, applyManualBountyTargets, removeManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
@@ -253,7 +254,7 @@ function formatSlackHelpText(): string {
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
     `• \`${c.slashAdjustElo}\` <user> <delta> — manual ELO change (allowlisted IDs only).`,
     `• \`${c.slashSetBounty}\` @user1 @user2 … — set today's bounty marks (same allowlist as adjustelo).`,
-    `• \`${c.slashAdjustBounty}\` \`unclaim\` <@mark> | \`clear\` | \`claim\` <@sniper> <@mark> | \`add\` <@mark> … — edit ledger or append marks (same allowlist).`,
+    `• \`${c.slashAdjustBounty}\` \`unclaim\` <@mark> | \`clear\` | \`claim\` <@sniper> <@mark> | \`add\` <@mark> … | \`remove\` <@mark> … — edit ledger, list, or claims (same allowlist).`,
     L.helpSnipeUndoLineSlack(c.slashUndo, plainSlackCmd(c.slashUndo)),
     "",
     "*Duels*",
@@ -351,7 +352,12 @@ async function executeSlackSetBounty(args: {
 }
 
 type SlackAdjustBountyResult =
-  | { ok: true; channelText: string; appendMeta?: { dateKey: string; addedCount: number; totalCount: number } }
+  | {
+      ok: true;
+      channelText: string;
+      appendMeta?: { dateKey: string; addedCount: number; totalCount: number };
+      removeMeta?: { dateKey: string; removedCount: number; totalCount: number };
+    }
   | { ok: false; ephemeral: string; opsLogError?: string };
 
 async function executeSlackAdjustBounty(args: {
@@ -519,6 +525,67 @@ async function executeSlackAdjustBounty(args: {
     }
   }
 
+  if (sub === "remove") {
+    const removeTokens = tokens.slice(1);
+    if (removeTokens.length === 0) {
+      return { ok: false, ephemeral: L.adjustBountyRemoveNeedMentions() };
+    }
+    try {
+      const markIds = await resolveUserTokensToIds({ client, tokens: removeTokens });
+      for (const id of markIds) {
+        const snap = await getSlackUserProfileCached(client, id);
+        if (!snap || snap.isBot || snap.deleted) {
+          return { ok: false, ephemeral: L.setBountyNoMentions() };
+        }
+      }
+      const { dateKey: rmDateKey, targetIds, actuallyRemoved } = removeManualBountyTargets({
+        db,
+        guildId: SLACK_GUILD_ID,
+        removeTargetIds: markIds,
+      });
+      const rmDateLabel = formatBountyDateLabel(rmDateKey, bountyEnv.timezone);
+      let channelText: string;
+      if (targetIds.length === 0) {
+        channelText =
+          L.adjustBountyListEmptyAfterRemove("slack", rmDateLabel) + "\n\n" + L.setBountyOperatorFooter("slack");
+      } else {
+        const rmNames = await resolveSlackDisplayNames(client, targetIds);
+        const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(rmNames.get(id) ?? id));
+        channelText =
+          L.bountyDailyAnnouncementSlack({ dateLabel: rmDateLabel, rankedLines }) +
+          "\n\n" +
+          L.setBountyOperatorFooter("slack");
+      }
+      return {
+        ok: true,
+        channelText,
+        removeMeta: {
+          dateKey: rmDateKey,
+          removedCount: actuallyRemoved.length,
+          totalCount: targetIds.length,
+        },
+      };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("unrecognized_user_token:")) {
+        return { ok: false, ephemeral: L.adjustBountyUsage(slashPath) };
+      }
+      if (msg === "bounty_disabled") {
+        return { ok: false, ephemeral: L.setBountyDisabled("slack") };
+      }
+      if (msg === "no_marks") {
+        return { ok: false, ephemeral: L.adjustBountyRemoveNeedMentions() };
+      }
+      if (msg === "bounty_no_list_today") {
+        return { ok: false, ephemeral: L.adjustBountyRemoveNoListToday() };
+      }
+      if (msg === "bounty_remove_none_on_list") {
+        return { ok: false, ephemeral: L.adjustBountyRemoveNoneOnList() };
+      }
+      return { ok: false, ephemeral: L.adjustBountyFailed(slashPath, msg), opsLogError: msg };
+    }
+  }
+
   return { ok: false, ephemeral: L.adjustBountyUnknownSubcommand() };
 }
 
@@ -665,7 +732,9 @@ export async function startSlackBot(params: {
       });
     }
 
-    const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, result.pairMatches, result.playerChanges);
+    const { pairMatches: displayPairMatches, playerChanges: displayPlayerChanges } =
+      mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
+    const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
     const snipeNames = await resolveSlackDisplayNames(app.client, snipeIds);
     const nameOf = (id: string) => escapeSlackLeaderboardName(snipeNames.get(id) ?? id);
 
@@ -695,8 +764,8 @@ export async function startSlackBot(params: {
     const confirmationText = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
       sniperId: args.sniperId,
-      pairMatches: result.pairMatches,
-      playerChanges: result.playerChanges,
+      pairMatches: displayPairMatches,
+      playerChanges: displayPlayerChanges,
       nameOf,
       duelAppend,
       bountyFirstPairIndices: result.bountyFirstPairIndices,
@@ -1254,6 +1323,11 @@ export async function startSlackBot(params: {
         userId: command.user_id,
         ...abResult.appendMeta,
       });
+    } else if (abResult.removeMeta) {
+      opsLog("command.slash.adjustbounty.remove", {
+        userId: command.user_id,
+        ...abResult.removeMeta,
+      });
     } else {
       opsLog("command.slash.adjustbounty.ok", { userId: command.user_id });
     }
@@ -1781,6 +1855,8 @@ export async function startSlackBot(params: {
           await postEphemeral(L.adjustBountySuccessEphemeral());
           if (abResult.appendMeta) {
             opsLog("command.text.adjustbounty.append", { userId, ...abResult.appendMeta });
+          } else if (abResult.removeMeta) {
+            opsLog("command.text.adjustbounty.remove", { userId, ...abResult.removeMeta });
           } else {
             opsLog("command.text.adjustbounty.ok", { userId });
           }

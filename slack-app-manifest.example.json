@@ -91,7 +91,7 @@
         "command": "/adjustbounty",
         "url": "https://example.com/slack/events",
         "description": "Edit today's bounty first-snipe / 2× ledger (authorized users)",
-        "usage_hint": "unclaim @mark | clear | claim @sniper @mark | add @mark …",
+        "usage_hint": "unclaim @mark | clear | claim @sniper @mark | add @mark … | remove @mark …",
         "should_escape": false
       }
     ]
