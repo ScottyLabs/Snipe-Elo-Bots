@@ -1,19 +1,18 @@
 /**
- * Wiš'adel / "W" (Arknights): gleeful chaos, darling, bombs and punchlines—sharp teeth behind the smile.
+ * Wiš'adel (Arknights): Sarkaz merc—"Doctor", "idiot", "scum", "assholes", "jackasses", "revenant", "Originium", "boom", "blast", "trash", "nap".
  * @see https://arknights.wiki.gg/wiki/Wi%C5%A1%27adel/Dialogue
- * @see https://arknights.wiki.gg/wiki/W/Story
- * @see https://arknights.wiki.gg/wiki/Wi%C5%A1%27adel/File
  */
 
 /** Short intro line under the /help title. */
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Hey *Darling*—field manual's below. Try not to blow the UX; I'll cackle either way~_"
+      "_Oh, Doctor, your old flame really was no good at housekeeping. I've cleaned up the commands and rules below. " +
+      "I'm in a good mood today, so try not to mess it up again~_"
     );
   }
   return (
-    "**Briefing, Darling.** Rules and commands live down here—handle with care (or don't; I'm entertained either way)."
+    "**Wiš'adel here.** I've laid out the commands and rules below. Skip the boring bits at your own risk, Doctor."
   );
 }
 
@@ -38,19 +37,19 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Makeup's in the file under ${params.sniperLabel}—paperwork's *chef's kiss*, promise~`;
+      return `Makeup's in the file under ${params.sniperLabel}. Paperwork's tight enough to hurt. Hmph.`;
     }
-    return `Makeup snipe? Logged under ${params.sniperLabel}. Don't make me forge it twice~`;
+    return `Makeup snipe? Logged under ${params.sniperLabel}. Don't make me type it twice, Doctor.`;
   }
-  return `Tagged. ${params.sniperLabel} keeps the glory; I keep the receipts~`;
+  return `Boom—tagged. ${params.sniperLabel} keeps the credit; I keep the receipt. Too bad, so sad. Not even ashes left.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Detonation tally:";
+  return "Countdown's over — exchange:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Who's still standing:";
+  return "Who's still on their feet:";
 }
 
 /** No-op for default voice; Exusiai appends a mirror disclaimer on snipe confirmations. */
@@ -59,26 +58,26 @@ export function snipeConfirmationAprilFoolsMirrorDisclaimer(_platform: "slack" |
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `Wrong zip code, Darling—this ain't my nest. Run it in ${channelRef} or I'm not touching the fuse.`;
+  return `Wrong nest, Doctor. ${channelRef} or I'm not lighting the fuse on this one.`;
 }
 
 export function serverNotConfigured(): string {
-  return `No lane on my map—someone with admin keys needs to wire the fun zone first.`;
+  return `No lane wired—someone with keys sets the fun zone first. Oi, you listening?`;
 }
 
 export function removesnipeNeedSlackThread(): string {
   return (
-    `I need the snipe *thread* for this undo. Slack won't deliver custom slash commands from thread composers—` +
-    `open that thread and send a plain message: \`removesnipe\` (no leading slash). That's the reliable path, if you please.`
+    `Undo lives in the *thread*—Slack won't run slash from thread composers.` +
+    ` Open it, plain \`removesnipe\`, no slash. Or don't; I'm not your keeper.`
   );
 }
 
 export function removesnipeNothingInThread(): string {
-  return `Zip to undo—wrong page or already pristine, pick your flavor~`;
+  return `Nothing to blow away—wrong page or already clean. Shame.`;
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Undone! Story's in the thread—apple pie's optional~`;
+  return `Undone. Story's in the thread—read it before you get clever again.`;
 }
 
 export function removesnipeFailed(error: string): string {
@@ -103,15 +102,15 @@ export function makeupUsage(slashCommand: string): string {
 }
 
 export function makeupParseSniperFail(): string {
-  return `I couldn't make sense of the sniper. Could I trouble you for a proper mention—<@U123>, for instance?`;
+  return `Couldn't parse your shooter—gimme a real mention, <@U123> style.`;
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
-  return `${callerDisplayName} pulled \`${slashCommand}\`—paper trail's in the thread, try to keep up~`;
+  return `${callerDisplayName} pulled \`${slashCommand}\`—paper trail's in the thread. Try to keep up, yeah?`;
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Logged, Darling—full mess is threaded; bring popcorn~`;
+  return `Logged—full mess is threaded. Popcorn's on you.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -131,7 +130,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Books and canvas: *boom*, updated. Try not to make me audit you~`;
+  return `Books and canvas went *boom*—updated, I mean. Try not to need me to audit you.`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -139,11 +138,11 @@ export function adjustCommandFailed(slashCommand: string, error: string): string
 }
 
 export function adjustEloForbidden(): string {
-  return `That sweet little lever? Not for you, Darling—authorized hands only~`;
+  return `That lever? Not yours—authorized hands only. Doctor's orders, not mine~`;
 }
 
 export function leaderboardFailed(error: string): string {
-  return `The roster slipped through my fingers: ${error}`;
+  return `Roster fizzled—${error}. Even I need a working fuse sometimes.`;
 }
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
@@ -157,7 +156,7 @@ export function slackLeaderboardPagingInteractivityHint(): string {
 }
 
 export function snipesFailed(error: string): string {
-  return `The logbook jammed: ${error}`;
+  return `Logbook jammed: ${error}—fix your mess, Doctor.`;
 }
 
 export function headtoheadFailed(error: string): string {
@@ -214,7 +213,7 @@ export function duelCancelNotChallenger(): string {
 }
 
 export function leaderboardEmptyFallback(): string {
-  return "_Board's quiet—like before the surprise party. Give it a minute, Darling._";
+  return "_Board's quiet—like the breath before the blast. Give it a sec._";
 }
 
 export function discordInvalidConfirmationId(): string {
@@ -593,8 +592,8 @@ export function graphCodeEphemeralSlack(params: { code: string; siteUrl: string;
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
-  help: "Manual of mayhem: rules, commands, where not to drop the C4 (metaphorically).",
-  leaderboard: "Who's king of the hill today—peek the board.",
+  help: "Manual of chaos: rules, commands, where the tripwires are.",
+  leaderboard: "Who's king of the scrapheap today—have a look.",
   show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",

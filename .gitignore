@@ -5,3 +5,6 @@ snipe-elo.sqlite3
 snipe-elo-discord.sqlite3
 .DS_Store
 
+# Character.AI voice generation output (local dev)
+scripts/cai/out/
+
