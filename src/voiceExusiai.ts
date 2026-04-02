@@ -47,7 +47,13 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup snipe logged under ${params.sniperLabel}—wouldn't leave a job half-delivered, Leader!`;
   }
-  return `Apple pie! Barrage! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`;
+
+  const lines = [
+    `Divine judgment! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`,
+    `Rock n' roll! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`,
+    `Barrage! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {

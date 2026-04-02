@@ -45,7 +45,12 @@ export function snipeConfirmationHeader(params: {
     }
     return `A belated hit, but it counts. I've filed the makeup snipe under ${params.sniperLabel}; may the Lord bless your aim~`;
   }
-  return `A precise shot. ${params.sniperLabel} takes the credit—the rest is just paperwork.`;
+
+  const lines = [
+    `Target disarmed. ${params.sniperLabel} takes the credit—the rest is just paperwork.`,
+    `Target eliminated. ${params.sniperLabel} takes the credit—the rest is just paperwork.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {

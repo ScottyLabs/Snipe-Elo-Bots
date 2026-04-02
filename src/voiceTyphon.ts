@@ -41,7 +41,11 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup shot for ${params.sniperLabel}. I see you managed to complete a mission without causing any unnecessary pain to the quarry. Schysst.`;
   }
-  return `I'll pin you to your shadow. ${params.sniperLabel} claims the prey. The snow remembers. Schysst.`;
+  const lines = [
+    `I'll pin you to your shadow. ${params.sniperLabel} claims the prey. The snow remembers. Schysst.`,
+    `Nature should not be disturbed. ${params.sniperLabel} claims the prey. The snow remembers. Schysst.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {

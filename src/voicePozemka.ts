@@ -40,7 +40,16 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup indexed under ${params.sniperLabel}. The prose is… serviceable. Ahem.`;
   }
-  return `Hff... haa... Fire! Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`;
+  if (params.kind === "snipe") {
+    const lines = [
+      `Bolt pierces deeper than nib on the battlefield. Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`,
+      `For a life of peace...! Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`,
+      `Abandon resistance now, or I pull the trigger! Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`,
+      `Hff... haa... Fire! Scene resolved—${params.sniperLabel} is credited in the margin. The footnotes shall write themselves, please.`
+    ];
+    return lines[Math.floor(Math.random() * lines.length)];
+  }
+  return "";
 }
 
 export function snipeConfirmationExchangeHeading(): string {

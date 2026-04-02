@@ -40,7 +40,15 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup for ${params.sniperLabel}? Logged. The sands don't miss a step.`;
   }
-  return `Bam! I've swallowed up the sun! ${params.sniperLabel} claims the prize; the tally's written in the dunes.`;
+  if (params.kind === "snipe") {
+    const lines = [
+      `What do you fear most? ${params.sniperLabel} claims the prize; the tally's written in the dunes.`,
+      `Bam! I've swallowed up the sun! ${params.sniperLabel} claims the prize; the tally's written in the dunes.`,
+      `Enough dreaming. Only nightmares come with me. ${params.sniperLabel} claims the prize; the tally's written in the dunes.`
+    ];
+    return lines[Math.floor(Math.random() * lines.length)];
+  }
+  return "";
 }
 
 export function snipeConfirmationExchangeHeading(): string {

@@ -40,7 +40,15 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup for ${params.sniperLabel}. Filed. Above board.`;
   }
-  return `Hmph! That's a wrap. ${params.sniperLabel} gets credit. Don't let them get away!`;
+  if (params.kind === "snipe") {
+    const lines = [
+      `Hmph! That's a wrap. ${params.sniperLabel} gets credit.`,
+      `Don't let them get away! That's a wrap. ${params.sniperLabel} gets credit.`,
+      `Laying suppressive fire! That's a wrap. ${params.sniperLabel} gets credit.`
+    ];
+    return lines[Math.floor(Math.random() * lines.length)];
+  }
+  return "";
 }
 
 export function snipeConfirmationExchangeHeading(): string {

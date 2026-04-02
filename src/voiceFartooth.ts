@@ -42,7 +42,12 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup for ${params.sniperLabel} is in the record. The paperwork's thorough—you see?`;
   }
-  return `The winds are stirring. I can tell… I've locked onto you. ${params.sniperLabel} is credited. Let's put an end to this... You can't beat me; accept your defeat.`;
+  const lines = [
+    `The winds are stirring. I can tell. ${params.sniperLabel} is credited.`,
+    `I've locked onto you. ${params.sniperLabel} takes the shot.`,
+    `There's no need to talk in battle. ${params.sniperLabel} claims the mark.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {

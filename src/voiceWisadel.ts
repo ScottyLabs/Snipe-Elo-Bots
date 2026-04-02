@@ -41,7 +41,13 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup snipe? Logged under ${params.sniperLabel}. Don't make me type it twice, Doctor.`;
   }
-  return `Boom! Who says there's always a countdown? ${params.sniperLabel} keeps the credit. Poor little guy. It's your unlucky day... Not even ashes left.`;
+  const lines = [
+    `Poor little guy. It's your unlucky day. ${params.sniperLabel} takes the win.`,
+    `Now now, wait in line. We got plenty for everyone. ${params.sniperLabel} is credited.`,
+    `Always so focused on the ground. But have you forgotten... to look ABOVE? ${params.sniperLabel} claims the mark.`,
+    `Boom! Who says there's always a countdown? ${params.sniperLabel} gets the credit.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {

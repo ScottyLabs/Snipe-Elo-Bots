@@ -40,7 +40,12 @@ export function snipeConfirmationHeader(params: {
     }
     return `Makeup logged for ${params.sniperLabel}. This area's clear of danger for now. Yeah, that's the lot.`;
   }
-  return `Threat at my position—yeah, not anymore soon. ${params.sniperLabel} takes the credit. Splits are on file.`;
+  const lines = [
+    `Threat at my position—yeah, not anymore soon. ${params.sniperLabel} takes the credit. Splits are on file.`,
+    `I'm hearing movement. ${params.sniperLabel} takes the credit. Splits are on file.`,
+    `And that's as far as you go. ${params.sniperLabel} takes the credit. Splits are on file.`
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
 export function snipeConfirmationExchangeHeading(): string {
