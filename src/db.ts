@@ -443,6 +443,48 @@ export class EloDb {
     this.checkpoint();
   }
 
+  /** Remove today's first-snipe claim for one mark (reopens 2×). Returns whether a row existed. */
+  deleteBountyFirstSnipeClaim(args: { guildId: string; bountyDate: string; bountyTargetId: string }): boolean {
+    const r = this.db
+      .prepare(
+        `DELETE FROM bounty_first_snipes WHERE guild_id = ? AND bounty_date = ? AND bounty_target_id = ?`
+      )
+      .run(args.guildId, args.bountyDate, args.bountyTargetId);
+    if (r.changes > 0) this.checkpoint();
+    return r.changes > 0;
+  }
+
+  /** Remove all first-snipe claims for a calendar day. Returns rows deleted. */
+  clearBountyFirstSnipeClaimsForDate(guildId: string, bountyDate: string): number {
+    const r = this.db
+      .prepare(`DELETE FROM bounty_first_snipes WHERE guild_id = ? AND bounty_date = ?`)
+      .run(guildId, bountyDate);
+    if (r.changes > 0) this.checkpoint();
+    return Number(r.changes);
+  }
+
+  /**
+   * Insert or replace a manual first-snipe row (synthetic snipe_id; not removed by normal snipe undo).
+   */
+  upsertManualBountyFirstSnipe(args: {
+    guildId: string;
+    bountyDate: string;
+    bountyTargetId: string;
+    sniperId: string;
+  }): void {
+    const snipeId = `manual-adjustbounty:${newId()}`;
+    this.db
+      .prepare(
+        `INSERT INTO bounty_first_snipes(guild_id, bounty_date, bounty_target_id, sniper_id, snipe_id)
+         VALUES(?,?,?,?,?)
+         ON CONFLICT(guild_id, bounty_date, bounty_target_id) DO UPDATE SET
+           sniper_id = excluded.sniper_id,
+           snipe_id = excluded.snipe_id`
+      )
+      .run(args.guildId, args.bountyDate, args.bountyTargetId, args.sniperId, snipeId);
+    this.checkpoint();
+  }
+
   /** Removes rating rows (e.g. bots). Does not delete snipe history. */
   deletePlayersForGuild(guildId: string, playerIds: string[]): number {
     if (playerIds.length === 0) return 0;

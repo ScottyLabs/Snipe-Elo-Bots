@@ -42,6 +42,7 @@ export const config = {
     slashMakeup: normalizeSlashCommand(process.env.MAKEUP_COMMAND, "makeupsnipe"),
     slashAdjustElo: normalizeSlashCommand(process.env.ADJUSTELO_COMMAND, "adjustelo"),
     slashSetBounty: normalizeSlashCommand(process.env.SLACK_SETBOUNTY_COMMAND, "setbounty"),
+    slashAdjustBounty: normalizeSlashCommand(process.env.SLACK_ADJUSTBOUNTY_COMMAND, "adjustbounty"),
     slashLeaderboard: normalizeSlashCommand(process.env.SLACK_LEADERBOARD_COMMAND, "leaderboard"),
     slashShowLeaderboard: normalizeSlashCommand(process.env.SLACK_SHOW_LEADERBOARD_COMMAND, "show_leaderboard"),
     slashSnipes: normalizeSlashCommand(process.env.SLACK_SNIPES_COMMAND, "snipes"),

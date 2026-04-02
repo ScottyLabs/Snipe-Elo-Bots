@@ -86,6 +86,13 @@
         "description": "Set today's bounty marks (authorized users only)",
         "usage_hint": "@user1 @user2 …",
         "should_escape": false
+      },
+      {
+        "command": "/adjustbounty",
+        "url": "https://example.com/slack/events",
+        "description": "Edit today's bounty first-snipe / 2× ledger (authorized users)",
+        "usage_hint": "unclaim @mark | clear | claim @sniper @mark | add @mark …",
+        "should_escape": false
       }
     ]
   },

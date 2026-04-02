@@ -38,7 +38,7 @@ import {
 } from "./snipeDuel";
 import { L } from "./voice";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
-import { applyManualBountyTargets } from "./bountyManual";
+import { appendManualBountyTargets, applyManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
@@ -253,6 +253,7 @@ function formatSlackHelpText(): string {
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
     `• \`${c.slashAdjustElo}\` <user> <delta> — manual ELO change (allowlisted IDs only).`,
     `• \`${c.slashSetBounty}\` @user1 @user2 … — set today's bounty marks (same allowlist as adjustelo).`,
+    `• \`${c.slashAdjustBounty}\` \`unclaim\` <@mark> | \`clear\` | \`claim\` <@sniper> <@mark> | \`add\` <@mark> … — edit ledger or append marks (same allowlist).`,
     L.helpSnipeUndoLineSlack(c.slashUndo, plainSlackCmd(c.slashUndo)),
     "",
     "*Duels*",
@@ -347,6 +348,178 @@ async function executeSlackSetBounty(args: {
       opsLogError: msg,
     };
   }
+}
+
+type SlackAdjustBountyResult =
+  | { ok: true; channelText: string; appendMeta?: { dateKey: string; addedCount: number; totalCount: number } }
+  | { ok: false; ephemeral: string; opsLogError?: string };
+
+async function executeSlackAdjustBounty(args: {
+  client: any;
+  db: EloDb;
+  tokens: string[];
+  slashPath: string;
+}): Promise<SlackAdjustBountyResult> {
+  const { client, db, tokens, slashPath } = args;
+  if (tokens.length === 0) {
+    return { ok: false, ephemeral: L.adjustBountyUsage(slashPath) };
+  }
+  if (!bountyEnv.enabled) {
+    return { ok: false, ephemeral: L.setBountyDisabled("slack") };
+  }
+  const dateKey = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
+  const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
+  const sub = tokens[0].toLowerCase();
+
+  if (sub === "clear") {
+    const n = db.clearBountyFirstSnipeClaimsForDate(SLACK_GUILD_ID, dateKey);
+    if (n === 0) {
+      return { ok: false, ephemeral: L.adjustBountyClearNone() };
+    }
+    return {
+      ok: true,
+      channelText: L.adjustBountyPublicClear("slack", { dateLabel, count: n }),
+    };
+  }
+
+  if (sub === "unclaim") {
+    const markTokens = tokens.slice(1);
+    if (markTokens.length !== 1) {
+      return { ok: false, ephemeral: L.adjustBountyNoMarkForUnclaim() };
+    }
+    try {
+      const ids = await resolveUserTokensToIds({ client, tokens: markTokens });
+      const markId = ids[0];
+      const snap = await getSlackUserProfileCached(client, markId);
+      if (!snap || snap.isBot || snap.deleted) {
+        return { ok: false, ephemeral: L.setBountyNoMentions() };
+      }
+      const removed = db.deleteBountyFirstSnipeClaim({
+        guildId: SLACK_GUILD_ID,
+        bountyDate: dateKey,
+        bountyTargetId: markId,
+      });
+      if (!removed) {
+        const name = escapeSlackLeaderboardName(
+          (await resolveSlackDisplayNames(client, [markId])).get(markId) ?? markId
+        );
+        return { ok: false, ephemeral: L.adjustBountyNotClaimed(name) };
+      }
+      const names = await resolveSlackDisplayNames(client, [markId]);
+      const markName = escapeSlackLeaderboardName(names.get(markId) ?? markId);
+      return { ok: true, channelText: L.adjustBountyPublicUnclaim("slack", { dateLabel, markName }) };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("unrecognized_user_token:")) {
+        return { ok: false, ephemeral: L.adjustBountyUsage(slashPath) };
+      }
+      return { ok: false, ephemeral: L.adjustBountyFailed(slashPath, msg), opsLogError: msg };
+    }
+  }
+
+  if (sub === "claim") {
+    const rest = tokens.slice(1);
+    if (rest.length !== 2) {
+      return { ok: false, ephemeral: L.adjustBountyClaimNeedTwoMentions() };
+    }
+    try {
+      const pairIds = await resolveUserTokensToIds({ client, tokens: rest });
+      const sniperId = pairIds[0];
+      const markId = pairIds[1];
+      if (sniperId === markId) {
+        return { ok: false, ephemeral: L.adjustBountyClaimSelf() };
+      }
+      for (const id of [sniperId, markId]) {
+        const snap = await getSlackUserProfileCached(client, id);
+        if (!snap || snap.isBot || snap.deleted) {
+          return { ok: false, ephemeral: L.setBountyNoMentions() };
+        }
+      }
+      const targets = db.getDailyBountyTargets(SLACK_GUILD_ID, dateKey);
+      if (!targets.includes(markId)) {
+        const mn = escapeSlackLeaderboardName(
+          (await resolveSlackDisplayNames(client, [markId])).get(markId) ?? markId
+        );
+        return { ok: false, ephemeral: L.adjustBountyMarkNotOnList(mn) };
+      }
+      db.upsertManualBountyFirstSnipe({
+        guildId: SLACK_GUILD_ID,
+        bountyDate: dateKey,
+        bountyTargetId: markId,
+        sniperId,
+      });
+      const names = await resolveSlackDisplayNames(client, [sniperId, markId]);
+      const sniperName = escapeSlackLeaderboardName(names.get(sniperId) ?? sniperId);
+      const markName = escapeSlackLeaderboardName(names.get(markId) ?? markId);
+      return {
+        ok: true,
+        channelText: L.adjustBountyPublicClaim("slack", { dateLabel, sniperName, markName }),
+      };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("unrecognized_user_token:")) {
+        return { ok: false, ephemeral: L.adjustBountyUsage(slashPath) };
+      }
+      return { ok: false, ephemeral: L.adjustBountyFailed(slashPath, msg), opsLogError: msg };
+    }
+  }
+
+  if (sub === "add") {
+    const addTokens = tokens.slice(1);
+    if (addTokens.length === 0) {
+      return { ok: false, ephemeral: L.adjustBountyAddNeedMentions() };
+    }
+    try {
+      const markIds = await resolveUserTokensToIds({ client, tokens: addTokens });
+      for (const id of markIds) {
+        const snap = await getSlackUserProfileCached(client, id);
+        if (!snap || snap.isBot || snap.deleted) {
+          return { ok: false, ephemeral: L.setBountyNoMentions() };
+        }
+      }
+      const { dateKey: addDateKey, targetIds, truncated, actuallyAdded } = appendManualBountyTargets({
+        db,
+        guildId: SLACK_GUILD_ID,
+        addTargetIds: markIds,
+      });
+      const addDateLabel = formatBountyDateLabel(addDateKey, bountyEnv.timezone);
+      const addNames = await resolveSlackDisplayNames(client, targetIds);
+      const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(addNames.get(id) ?? id));
+      let channelText =
+        L.bountyDailyAnnouncementSlack({ dateLabel: addDateLabel, rankedLines }) +
+        "\n\n" +
+        L.setBountyOperatorFooter("slack");
+      if (truncated) {
+        channelText += "\n\n_" + L.setBountyTooManyDropped(bountyEnv.topN) + "_";
+      }
+      return {
+        ok: true,
+        channelText,
+        appendMeta: {
+          dateKey: addDateKey,
+          addedCount: actuallyAdded.length,
+          totalCount: targetIds.length,
+        },
+      };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("unrecognized_user_token:")) {
+        return { ok: false, ephemeral: L.adjustBountyUsage(slashPath) };
+      }
+      if (msg === "bounty_disabled") {
+        return { ok: false, ephemeral: L.setBountyDisabled("slack") };
+      }
+      if (msg === "no_marks") {
+        return { ok: false, ephemeral: L.adjustBountyAddNeedMentions() };
+      }
+      if (msg === "bounty_no_new_marks") {
+        return { ok: false, ephemeral: L.adjustBountyNoNewMarks() };
+      }
+      return { ok: false, ephemeral: L.adjustBountyFailed(slashPath, msg), opsLogError: msg };
+    }
+  }
+
+  return { ok: false, ephemeral: L.adjustBountyUnknownSubcommand() };
 }
 
 /** Non-sniper mentions that are human (not bot, not deleted). */
@@ -1039,6 +1212,53 @@ export async function startSlackBot(params: {
     });
   });
 
+  app.command(config.slackOps.slashAdjustBounty, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(command.user_id)) {
+      opsLog("command.slash.adjustbounty.denied", { userId: command.user_id });
+      await respond({ response_type: "ephemeral", text: L.adjustEloForbidden() });
+      return;
+    }
+    const tokens = command.text.trim().split(/\s+/).filter(Boolean);
+    const slashPath = config.slackOps.slashAdjustBounty;
+    opsLog("command.slash.adjustbounty", {
+      userId: command.user_id,
+      channelId: command.channel_id,
+      textPreview: command.text.slice(0, 200),
+    });
+    const abResult = await executeSlackAdjustBounty({
+      client,
+      db: params.db,
+      tokens,
+      slashPath,
+    });
+    if (!abResult.ok) {
+      if (abResult.opsLogError) {
+        opsLog("command.slash.adjustbounty.error", { error: abResult.opsLogError });
+      }
+      await respond({ response_type: "ephemeral", text: abResult.ephemeral });
+      return;
+    }
+    await client.chat.postMessage({
+      channel: command.channel_id,
+      text: abResult.channelText,
+      mrkdwn: true,
+    });
+    await respond({ response_type: "ephemeral", text: L.adjustBountySuccessEphemeral() });
+    if (abResult.appendMeta) {
+      opsLog("command.slash.adjustbounty.append", {
+        userId: command.user_id,
+        ...abResult.appendMeta,
+      });
+    } else {
+      opsLog("command.slash.adjustbounty.ok", { userId: command.user_id });
+    }
+  });
+
   app.command(config.slackOps.slashSnipeDuel, async ({ command, ack, respond, client }) => {
     await ack();
     if (command.channel_id !== config.slack.channelId) {
@@ -1112,7 +1332,7 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}, ${config.slackOps.slashAdjustBounty}`
   );
 
   const plainCmd = {
@@ -1127,12 +1347,13 @@ export async function startSlackBot(params: {
     makeup: plainSlackCmd(config.slackOps.slashMakeup),
     adjust: plainSlackCmd(config.slackOps.slashAdjustElo),
     setBounty: plainSlackCmd(config.slackOps.slashSetBounty),
+    adjustBounty: plainSlackCmd(config.slackOps.slashAdjustBounty),
   };
 
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainCmd.adjustBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1526,6 +1747,43 @@ export async function startSlackBot(params: {
             dateKey: bountyResult.dateKey,
             count: bountyResult.count,
           });
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.adjustBounty)) {
+          if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(userId)) {
+            opsLog("command.text.adjustbounty.denied", { userId });
+            await postEphemeral(L.adjustEloForbidden());
+            return;
+          }
+          const partsAb = text.split(/\s+/).filter(Boolean);
+          const subTokens = partsAb.slice(1);
+          opsLog("command.text.adjustbounty", { userId, channelId, textPreview: text.slice(0, 200) });
+          const abResult = await executeSlackAdjustBounty({
+            client,
+            db: params.db,
+            tokens: subTokens,
+            slashPath: config.slackOps.slashAdjustBounty,
+          });
+          if (!abResult.ok) {
+            if (abResult.opsLogError) {
+              opsLog("command.text.adjustbounty.error", { error: abResult.opsLogError });
+            }
+            await postEphemeral(abResult.ephemeral);
+            return;
+          }
+          await client.chat.postMessage({
+            channel: channelId,
+            ...(threadTs ? { thread_ts: threadTs } : {}),
+            text: abResult.channelText,
+            mrkdwn: true,
+          });
+          await postEphemeral(L.adjustBountySuccessEphemeral());
+          if (abResult.appendMeta) {
+            opsLog("command.text.adjustbounty.append", { userId, ...abResult.appendMeta });
+          } else {
+            opsLog("command.text.adjustbounty.ok", { userId });
+          }
           return;
         }
       }

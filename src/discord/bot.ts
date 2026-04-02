@@ -34,7 +34,7 @@ import {
 } from "../discordDisplayNames";
 import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "../bounty";
-import { applyManualBountyTargets } from "../bountyManual";
+import { appendManualBountyTargets, applyManualBountyTargets } from "../bountyManual";
 import { bountyEnv } from "../bountyEnv";
 import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
@@ -184,6 +184,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     L.helpSnipeUndoLineDiscord(),
     "• `/adjustelo <player> <delta>` — manual ELO adjustment (moderators).",
     "• `/setbounty <@marks…>` — set today's bounty marks (moderators); auto midnight list won't overwrite until tomorrow.",
+    "• `/adjustbounty` — edit today's first-snipe / 2× ledger (`unclaim`, `clear`, `claim`) or append marks with `add` (moderators).",
     "• `/setsnipechannel` — set this channel as the server's snipe lane (moderators).",
     "",
     "**Implicit snipe rule**",
@@ -387,6 +388,36 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             .setName("marks")
             .setDescription("Ping each bounty mark, e.g. @alice @bob @carol")
             .setRequired(true)
+        ),
+      new SlashCommandBuilder()
+        .setName("adjustbounty")
+        .setDescription(L.discordSlashDescriptions.adjustbounty)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addSubcommand((sc) =>
+          sc
+            .setName("add")
+            .setDescription("Append bounty marks to today's list (up to BOUNTY_TOP_N total)")
+            .addStringOption((o) =>
+              o.setName("marks").setDescription("Ping each mark to add, e.g. @alice @bob").setRequired(true)
+            )
+        )
+        .addSubcommand((sc) =>
+          sc
+            .setName("unclaim")
+            .setDescription("Reopen 2× on a mark by removing today's first-snipe claim")
+            .addUserOption((o) => o.setName("mark").setDescription("Bounty mark").setRequired(true))
+        )
+        .addSubcommand((sc) =>
+          sc
+            .setName("clear")
+            .setDescription("Remove all first-snipe claims for today (every mark's 2× reopens)")
+        )
+        .addSubcommand((sc) =>
+          sc
+            .setName("claim")
+            .setDescription("Manually record first snipe on a bounty mark for today")
+            .addUserOption((o) => o.setName("sniper").setDescription("Credited shooter").setRequired(true))
+            .addUserOption((o) => o.setName("mark").setDescription("Bounty mark").setRequired(true))
         ),
       new SlashCommandBuilder()
         .setName("setsnipechannel")
@@ -918,6 +949,189 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         await interaction.editReply({
           content: L.setBountyFailed("/setbounty", msg),
         });
+      }
+      return;
+    }
+
+    if (interaction.commandName === "adjustbounty") {
+      if (!isDiscordModerator(interaction)) {
+        await interaction.reply({ content: L.discordModeratorOnlyCommand(), ephemeral: true });
+        return;
+      }
+      if (!interaction.guild) {
+        await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+      const expectedChAb = getGuildSnipeChannelId(db, interaction.guild.id);
+      if (!expectedChAb || interaction.channelId !== expectedChAb) {
+        await interaction.reply({
+          content: expectedChAb ? L.wrongSnipeChannel(`<#${expectedChAb}>`) : L.serverNotConfigured(),
+          ephemeral: true,
+        });
+        return;
+      }
+      if (!bountyEnv.enabled) {
+        await interaction.reply({ content: L.setBountyDisabled("discord"), ephemeral: true });
+        return;
+      }
+
+      const dateKeyAb = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
+      const dateLabelAb = formatBountyDateLabel(dateKeyAb, bountyEnv.timezone);
+      const guildIdAb = interaction.guild.id;
+      const subAb = interaction.options.getSubcommand(true);
+
+      await interaction.deferReply();
+
+      try {
+        if (subAb === "clear") {
+          const nClear = db.clearBountyFirstSnipeClaimsForDate(guildIdAb, dateKeyAb);
+          if (nClear === 0) {
+            await interaction.editReply({ content: L.adjustBountyClearNone() });
+            return;
+          }
+          await interaction.editReply({
+            content: L.adjustBountyPublicClear("discord", { dateLabel: dateLabelAb, count: nClear }),
+          });
+          opsLog("discord.adjustbounty.clear", {
+            guildId: guildIdAb,
+            count: nClear,
+            actorId: interaction.user.id,
+          });
+          return;
+        }
+
+        if (subAb === "unclaim") {
+          const markU = interaction.options.getUser("mark", true);
+          if (markU.bot) {
+            await interaction.editReply({ content: L.setBountyNoMentions() });
+            return;
+          }
+          const removedU = db.deleteBountyFirstSnipeClaim({
+            guildId: guildIdAb,
+            bountyDate: dateKeyAb,
+            bountyTargetId: markU.id,
+          });
+          if (!removedU) {
+            const namesU = await resolveDiscordDisplayNames(interaction.guild, [markU.id]);
+            const mlU = escapeDiscordMarkdownChunk(namesU.get(markU.id) ?? markU.id);
+            await interaction.editReply({ content: L.adjustBountyNotClaimed(mlU) });
+            return;
+          }
+          const namesUn = await resolveDiscordDisplayNames(interaction.guild, [markU.id]);
+          const markNameU = escapeDiscordMarkdownChunk(namesUn.get(markU.id) ?? markU.id);
+          await interaction.editReply({
+            content: L.adjustBountyPublicUnclaim("discord", { dateLabel: dateLabelAb, markName: markNameU }),
+          });
+          opsLog("discord.adjustbounty.unclaim", {
+            guildId: guildIdAb,
+            markId: markU.id,
+            actorId: interaction.user.id,
+          });
+          return;
+        }
+
+        if (subAb === "claim") {
+          const sniperC = interaction.options.getUser("sniper", true);
+          const markC = interaction.options.getUser("mark", true);
+          if (sniperC.bot || markC.bot) {
+            await interaction.editReply({ content: L.setBountyNoMentions() });
+            return;
+          }
+          if (sniperC.id === markC.id) {
+            await interaction.editReply({ content: L.adjustBountyClaimSelf() });
+            return;
+          }
+          const targetsC = db.getDailyBountyTargets(guildIdAb, dateKeyAb);
+          if (!targetsC.includes(markC.id)) {
+            const namesC = await resolveDiscordDisplayNames(interaction.guild, [markC.id]);
+            const mlC = escapeDiscordMarkdownChunk(namesC.get(markC.id) ?? markC.id);
+            await interaction.editReply({ content: L.adjustBountyMarkNotOnList(mlC) });
+            return;
+          }
+          db.upsertManualBountyFirstSnipe({
+            guildId: guildIdAb,
+            bountyDate: dateKeyAb,
+            bountyTargetId: markC.id,
+            sniperId: sniperC.id,
+          });
+          const nameMapC = await resolveDiscordDisplayNames(interaction.guild, [sniperC.id, markC.id]);
+          const sniperNameC = escapeDiscordMarkdownChunk(nameMapC.get(sniperC.id) ?? sniperC.id);
+          const markNameC = escapeDiscordMarkdownChunk(nameMapC.get(markC.id) ?? markC.id);
+          await interaction.editReply({
+            content: L.adjustBountyPublicClaim("discord", {
+              dateLabel: dateLabelAb,
+              sniperName: sniperNameC,
+              markName: markNameC,
+            }),
+          });
+          opsLog("discord.adjustbounty.claim", {
+            guildId: guildIdAb,
+            sniperId: sniperC.id,
+            markId: markC.id,
+            actorId: interaction.user.id,
+          });
+          return;
+        }
+
+        if (subAb === "add") {
+          const marksRawA = interaction.options.getString("marks", true);
+          const idsA = parseMentionedUserIdsFromContent(marksRawA);
+          if (idsA.length === 0) {
+            await interaction.editReply({ content: L.adjustBountyAddNeedMentions() });
+            return;
+          }
+          for (const id of idsA) {
+            const u = await interaction.client.users.fetch(id).catch(() => null);
+            if (!u || u.bot) {
+              await interaction.editReply({ content: L.setBountyNoMentions() });
+              return;
+            }
+          }
+          try {
+            const { dateKey: addDk, targetIds, truncated, actuallyAdded } = appendManualBountyTargets({
+              db,
+              guildId: guildIdAb,
+              addTargetIds: idsA,
+            });
+            const addDl = formatBountyDateLabel(addDk, bountyEnv.timezone);
+            const nameMapA = await resolveDiscordDisplayNames(interaction.guild, targetIds);
+            const rankedLinesA = targetIds.map((id) => escapeDiscordMarkdownChunk(nameMapA.get(id) ?? id));
+            let contentA =
+              L.bountyDailyAnnouncementDiscord({ dateLabel: addDl, rankedLines: rankedLinesA }) +
+              "\n\n" +
+              L.setBountyOperatorFooter("discord");
+            if (truncated) {
+              contentA += "\n\n" + L.setBountyTooManyDropped(bountyEnv.topN);
+            }
+            await interaction.editReply({ content: contentA });
+            opsLog("discord.adjustbounty.add", {
+              guildId: guildIdAb,
+              actorId: interaction.user.id,
+              dateKey: addDk,
+              addedCount: actuallyAdded.length,
+              totalCount: targetIds.length,
+            });
+          } catch (eAdd: unknown) {
+            const msgAdd = eAdd instanceof Error ? eAdd.message : String(eAdd);
+            if (msgAdd === "bounty_disabled") {
+              await interaction.editReply({ content: L.setBountyDisabled("discord") });
+              return;
+            }
+            if (msgAdd === "no_marks") {
+              await interaction.editReply({ content: L.adjustBountyAddNeedMentions() });
+              return;
+            }
+            if (msgAdd === "bounty_no_new_marks") {
+              await interaction.editReply({ content: L.adjustBountyNoNewMarks() });
+              return;
+            }
+            await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgAdd) });
+          }
+          return;
+        }
+      } catch (e) {
+        const msgAb = e instanceof Error ? e.message : String(e);
+        await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgAb) });
       }
       return;
     }

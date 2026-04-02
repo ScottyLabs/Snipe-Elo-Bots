@@ -443,6 +443,99 @@ export function setBountySuccessEphemeral(): string {
   return "Posted today's bounty marks—midnight auto-list holds fire until the calendar turns.";
 }
 
+export function adjustBountyUsage(slashPath: string): string {
+  return (
+    `Format: \`${slashPath}\` \`unclaim\` <@mark> · \`${slashPath}\` \`clear\` · \`${slashPath}\` \`claim\` <@sniper> <@mark> · ` +
+    `\`${slashPath}\` \`add\` <@mark> … — bolt extra marks on (deduped, BOUNTY_TOP_N cap). Same keys as adjustelo.`
+  );
+}
+
+export function adjustBountyUnknownSubcommand(): string {
+  return "Need `unclaim`, `clear`, `claim`, or `add`—peek `/help` for the cheat sheet, Leader!";
+}
+
+export function adjustBountyAddNeedMentions(): string {
+  return "`add` wants at least one human ping—load in some real marks!";
+}
+
+export function adjustBountyNoNewMarks(): string {
+  return "Those folks are already on today's bounty board—nothing fresh to tack on!";
+}
+
+export function adjustBountyNoMarkForUnclaim(): string {
+  return "`unclaim` wants one @mark—whose 2× are we cracking back open?";
+}
+
+export function adjustBountyNotClaimed(markLabel: string): string {
+  return `Nobody's on file for first snipe on ${markLabel} today—already wide open!`;
+}
+
+export function adjustBountyClearNone(): string {
+  return "Ledger's already empty—every mark's 2× was up for grabs.";
+}
+
+export function adjustBountyClaimNeedTwoMentions(): string {
+  return "`claim` needs two pings: shooter first, bounty mark second.";
+}
+
+export function adjustBountyMarkNotOnList(markLabel: string): string {
+  return `${markLabel} ain't on today's bounty board—set the list with setbounty first!`;
+}
+
+export function adjustBountyClaimSelf(): string {
+  return "Shooter and mark gotta be two different operators.";
+}
+
+export function adjustBountyPublicUnclaim(platform: "slack" | "discord", params: { dateLabel: string; markName: string }): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty desk (operator)* — ${params.dateLabel}\n` +
+      `Yanked today's first-snipe flag off *${params.markName}*—2× is live again on the next hit!`
+    );
+  }
+  return (
+    `**Bounty desk (operator)** — ${params.dateLabel}\n` +
+    `Yanked today's first-snipe flag off **${params.markName}**—2× is live again on the next hit!`
+  );
+}
+
+export function adjustBountyPublicClear(platform: "slack" | "discord", params: { dateLabel: string; count: number }): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty desk (operator)* — ${params.dateLabel}\n` +
+      `Cleared *${params.count}* first-snipe flag(s)—full mag of 2× chances for every mark!`
+    );
+  }
+  return (
+    `**Bounty desk (operator)** — ${params.dateLabel}\n` +
+    `Cleared **${params.count}** first-snipe flag(s)—full mag of 2× for every mark!`
+  );
+}
+
+export function adjustBountyPublicClaim(
+  platform: "slack" | "discord",
+  params: { dateLabel: string; sniperName: string; markName: string }
+): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty desk (operator)* — ${params.dateLabel}\n` +
+      `Manual entry: *${params.sniperName}* landed first snipe on *${params.markName}*—2× locked in for that mark today.`
+    );
+  }
+  return (
+    `**Bounty desk (operator)** — ${params.dateLabel}\n` +
+    `Manual entry: **${params.sniperName}** landed first snipe on **${params.markName}**—2× locked in for that mark today.`
+  );
+}
+
+export function adjustBountySuccessEphemeral(): string {
+  return "Broadcast the ledger tweak to the channel—nice and loud!";
+}
+
+export function adjustBountyFailed(context: string, error: string): string {
+  return `${context} jammed: ${error}`;
+}
+
 export function graphViewerNotConfigured(): string {
   return `Graph viewer isn't wired—set GRAPH_PUBLIC_BASE_URL on the host (no trailing slash) and we're golden.`;
 }
@@ -471,6 +564,7 @@ export const discordSlashDescriptions = {
   makeupsnipe: "Backfill a snipe the camera missed—Penguin Logistics paperwork!",
   adjustelo: "Hand-tune someone's rating—use sparingly, authorized only.",
   setbounty: "Set today's bounty marks (@mentions). Same keys as adjustelo.",
+  adjustbounty: "Twiddle today's first-snipe / 2× ledger or slap on marks: unclaim, clear, claim, add (mods).",
   setsnipechannel: "Point this server's snipe channel here (mods).",
   snipes: "Last five shots fired, last five caught—optional user; default you.",
   headtohead: "Everyone vs everyone snipe counts—matrix style.",

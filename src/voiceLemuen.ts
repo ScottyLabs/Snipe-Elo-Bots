@@ -447,6 +447,101 @@ export function setBountySuccessEphemeral(): string {
   return "Posted today's bounty marks to the channel—the midnight auto-list won't replace them until the calendar turns.";
 }
 
+export function adjustBountyUsage(slashPath: string): string {
+  return (
+    `Usage: \`${slashPath}\` \`unclaim\` <@mark> — reopen 2× on one mark · ` +
+    `\`${slashPath}\` \`clear\` — reopen 2× on every mark today · ` +
+    `\`${slashPath}\` \`claim\` <@sniper> <@mark> — record first-snipe manually · ` +
+    `\`${slashPath}\` \`add\` <@mark> … — append marks (deduped, capped at BOUNTY_TOP_N). Same access as adjustelo.`
+  );
+}
+
+export function adjustBountyUnknownSubcommand(): string {
+  return "Start with `unclaim`, `clear`, `claim`, or `add`—see `/help` for the full syntax.";
+}
+
+export function adjustBountyAddNeedMentions(): string {
+  return "`add` needs at least one human @mark to append—bots won't do.";
+}
+
+export function adjustBountyNoNewMarks(): string {
+  return "Everyone you mentioned is already on today's bounty list—nothing new to append.";
+}
+
+export function adjustBountyNoMarkForUnclaim(): string {
+  return "`unclaim` needs exactly one mark mention—who should get their 2× slot reopened?";
+}
+
+export function adjustBountyNotClaimed(markLabel: string): string {
+  return `No first-snipe claim on file today for ${markLabel}—nothing to remove.`;
+}
+
+export function adjustBountyClearNone(): string {
+  return "No first-snipe claims were on file for today—every mark's 2× was already open.";
+}
+
+export function adjustBountyClaimNeedTwoMentions(): string {
+  return "`claim` needs two mentions: the sniper (credit) first, then the bounty mark.";
+}
+
+export function adjustBountyMarkNotOnList(markLabel: string): string {
+  return `${markLabel} isn't on today's bounty mark list—set marks with setbounty first, or pick a listed mark.`;
+}
+
+export function adjustBountyClaimSelf(): string {
+  return "Sniper and mark must be different people.";
+}
+
+export function adjustBountyPublicUnclaim(platform: "slack" | "discord", params: { dateLabel: string; markName: string }): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
+      `Removed today's first-snipe claim on *${params.markName}*—that mark's 2× slot is open again on the next qualifying snipe.`
+    );
+  }
+  return (
+    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
+    `Removed today's first-snipe claim on **${params.markName}**—that mark's 2× slot is open again.`
+  );
+}
+
+export function adjustBountyPublicClear(platform: "slack" | "discord", params: { dateLabel: string; count: number }): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
+      `Cleared *${params.count}* first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
+    );
+  }
+  return (
+    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
+    `Cleared **${params.count}** first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
+  );
+}
+
+export function adjustBountyPublicClaim(
+  platform: "slack" | "discord",
+  params: { dateLabel: string; sniperName: string; markName: string }
+): string {
+  if (platform === "slack") {
+    return (
+      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
+      `Recorded a manual first snipe: *${params.sniperName}* → *${params.markName}* (2× on that mark counts as claimed for today).`
+    );
+  }
+  return (
+    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
+    `Recorded a manual first snipe: **${params.sniperName}** → **${params.markName}** (2× on that mark counts as claimed for today).`
+  );
+}
+
+export function adjustBountySuccessEphemeral(): string {
+  return "Posted the bounty ledger change to the channel.";
+}
+
+export function adjustBountyFailed(context: string, error: string): string {
+  return `${context} didn't take: ${error}`;
+}
+
 export function graphViewerNotConfigured(): string {
   return `The graph viewer isn't wired yet—set GRAPH_PUBLIC_BASE_URL on the host to your Railway URL (no trailing slash), if you please.`;
 }
@@ -477,6 +572,7 @@ export const discordSlashDescriptions = {
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",
   adjustelo: "Adjust someone's rating by hand—sparingly, if you please.",
   setbounty: "Set today's bounty marks (@mentions). Same access as adjustelo.",
+  adjustbounty: "Edit today's bounty first-snipe ledger or append marks: unclaim, clear, claim, add (moderators).",
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
   headtohead: "Pairwise snipe counts for everyone still on the books.",

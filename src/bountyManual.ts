@@ -36,3 +36,43 @@ export function applyManualBountyTargets(args: {
   args.db.setMeta(args.guildId, BOUNTY_MANUAL_DATE_META_KEY, dateKey);
   return { dateKey, targetIds: capped, truncated };
 }
+
+/**
+ * Append bounty marks for today (dedupes against existing list, caps at `bountyEnv.topN`).
+ * Sets the same manual lock as `applyManualBountyTargets`.
+ */
+export function appendManualBountyTargets(args: {
+  db: EloDb;
+  guildId: string;
+  addTargetIds: string[];
+  nowMs?: number;
+}): { dateKey: string; targetIds: string[]; truncated: boolean; actuallyAdded: string[] } {
+  if (!bountyEnv.enabled) {
+    throw new Error("bounty_disabled");
+  }
+  const uniqAdd = [...new Set(args.addTargetIds.filter(Boolean))];
+  if (uniqAdd.length === 0) {
+    throw new Error("no_marks");
+  }
+
+  const now = args.nowMs ?? Date.now();
+  const dateKey = calendarDateKeyInTimeZone(now, bountyEnv.timezone);
+  const row = args.db.getDailyBountyAnnouncementRow(args.guildId, dateKey);
+  const existing = row?.targetIds ?? [];
+
+  const newIds = uniqAdd.filter((id) => !existing.includes(id));
+  if (newIds.length === 0) {
+    throw new Error("bounty_no_new_marks");
+  }
+
+  const merged = [...existing, ...newIds];
+  const truncated = merged.length > bountyEnv.topN;
+  const capped = merged.slice(0, bountyEnv.topN);
+  const actuallyAdded = newIds.filter((id) => capped.includes(id));
+
+  args.db.ensurePlayers(args.guildId, capped);
+  args.db.upsertDailyBountyTargets(args.guildId, dateKey, capped, Date.now());
+  args.db.setMeta(args.guildId, BOUNTY_MANUAL_DATE_META_KEY, dateKey);
+
+  return { dateKey, targetIds: capped, truncated, actuallyAdded };
+}
