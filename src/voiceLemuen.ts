@@ -50,7 +50,10 @@ export function snipeConfirmationHeader(params: {
     `Target disarmed. ${params.sniperLabel} takes the credit—the rest is just paperwork.`,
     `Target eliminated. ${params.sniperLabel} takes the credit—the rest is just paperwork.`
   ];
-  return lines[Math.floor(Math.random() * lines.length)];
+  const selected = lines[Math.floor(Math.random() * lines.length)];
+  return params.kind === "snipe"
+    ? selected + "\nhttps://tenor.com/ttK2kvQx0D6.gif"
+    : selected;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -298,27 +301,12 @@ export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
   return `**Daily bounty** — ${dateLabel}\nThere aren't quite enough human marks on the board yet, so no list today. We'll draw one up once the field fills out~`;
 }
 
-/** Snipe confirmation: section heading when daily bounty (2× ELO) applied to one or more pairs. */
-export function snipeConfirmationBountySectionTitle(singleExchange: boolean): string {
-  return singleExchange
-    ? "Daily bounty — double ELO on this exchange:"
-    : "Daily bounty — double ELO on these exchanges:";
-}
-
-/** Discord snipe confirmation (markdown); same semantics as the Slack/plain block. */
-export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boolean): string {
-  return singleExchange
-    ? "**Daily bounty** — **double ELO** on this exchange:"
-    : "**Daily bounty** — **double ELO** on these exchanges:";
-}
-
-/** Appended to each bounty pair line: names the snipe that seized the mark. */
-export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "discord"): string {
-  if (platform === "slack") {
-    return " — _This shot claimed today's daily bounty on the mark (double ELO)._";
-  }
-  return " — *This shot claimed today's daily bounty on the mark (double ELO).*";
-}
+/** Snipe confirmation bounty block — shared plaintext for every voice (`snipeBountyConfirmationText`). */
+export {
+  snipeConfirmationBountySectionTitle,
+  snipeConfirmationBountySectionTitleDiscord,
+  snipeConfirmationBountyExchangeDetail,
+} from "./snipeBountyConfirmationText";
 
 /** Snipe confirmation: section when a pair was skipped because of snipe cooldown (no ELO). */
 export function snipeConfirmationPairCooldownSectionTitle(singleExchange: boolean): string {

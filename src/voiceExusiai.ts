@@ -53,7 +53,10 @@ export function snipeConfirmationHeader(params: {
     `Rock n' roll! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`,
     `Barrage! Credit goes to ${params.sniperLabel}—the rest is bookkeeping. Let's keep up the momentum and charge on!`
   ];
-  return lines[Math.floor(Math.random() * lines.length)];
+  const selected = lines[Math.floor(Math.random() * lines.length)];
+  return params.kind === "snipe"
+    ? selected + "\nhttps://tenor.com/sMQb0MYcScv.gif"
+    : selected;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
@@ -307,24 +310,11 @@ export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
   return `**Daily bounty** — ${dateLabel}\nNot enough humans on the board for a mark list today, Leader—we'll throw a party when the roster fills up!`;
 }
 
-export function snipeConfirmationBountySectionTitle(singleExchange: boolean): string {
-  return singleExchange
-    ? "Daily bounty — 2× ELO barrage on this exchange, Leader!"
-    : "Daily bounty — 2× ELO barrage on these exchanges, Leader!";
-}
-
-export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boolean): string {
-  return singleExchange
-    ? "**Daily bounty** — **2× ELO** barrage on this exchange, Leader!"
-    : "**Daily bounty** — **2× ELO** barrage on these exchanges, Leader!";
-}
-
-export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "discord"): string {
-  if (platform === "slack") {
-    return " — _This hit claimed today's bounty on the mark—2× ELO, baby!_";
-  }
-  return " — *This hit claimed today's bounty on the mark—2× ELO, baby!*";
-}
+export {
+  snipeConfirmationBountySectionTitle,
+  snipeConfirmationBountySectionTitleDiscord,
+  snipeConfirmationBountyExchangeDetail,
+} from "./snipeBountyConfirmationText";
 
 export function snipeConfirmationPairCooldownSectionTitle(singleExchange: boolean): string {
   return singleExchange

@@ -294,27 +294,12 @@ export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
   return `**Daily bounty** — ${dateLabel}\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
 }
 
-/** Snipe confirmation: section heading when daily bounty (2× ELO) applied to one or more pairs. */
-export function snipeConfirmationBountySectionTitle(singleExchange: boolean): string {
-  return singleExchange
-    ? "Daily bounty — 2× ELO on this exchange:"
-    : "Daily bounty — 2× ELO on these exchanges:";
-}
-
-/** Discord snipe confirmation (markdown); same semantics as the Slack/plain block. */
-export function snipeConfirmationBountySectionTitleDiscord(singleExchange: boolean): string {
-  return singleExchange
-    ? "**Daily bounty** — **2× ELO** on this exchange:"
-    : "**Daily bounty** — **2× ELO** on these exchanges:";
-}
-
-/** Appended to each bounty pair line: names the snipe that seized the mark. */
-export function snipeConfirmationBountyExchangeDetail(platform: "slack" | "discord"): string {
-  if (platform === "slack") {
-    return " — _This snipe claimed today's daily bounty on this mark (2× ELO)._";
-  }
-  return " — *This snipe claimed today's daily bounty on this mark (2× ELO).*";
-}
+/** Snipe confirmation bounty block — shared plaintext for every voice (`snipeBountyConfirmationText`). */
+export {
+  snipeConfirmationBountySectionTitle,
+  snipeConfirmationBountySectionTitleDiscord,
+  snipeConfirmationBountyExchangeDetail,
+} from "./snipeBountyConfirmationText";
 
 /** Snipe confirmation: section when a pair was skipped because of snipe cooldown (no ELO). */
 export function snipeConfirmationPairCooldownSectionTitle(singleExchange: boolean): string {
