@@ -5,9 +5,19 @@
  * @see https://arknights.wiki.gg/wiki/Lemuen/Story
  */
 
-/** Extra lines under the help title; empty for default voice. */
-export function helpCommandPrologue(_platform: "slack" | "discord"): string {
-  return "";
+/** Extra lines under the help title (post–April Fools: console back from her sister's little holiday). */
+export function helpCommandPrologue(platform: "slack" | "discord"): string {
+  if (platform === "slack") {
+    return (
+      "_April Fools is behind us—I've *reclaimed* my console from my sister's… *enthusiastic* custody. " +
+      "The keys are mine again, the scoring runs *straight*, and undo is back on the books. " +
+      "If anything still looks off, say the word and we'll audit it properly~_"
+    );
+  }
+  return (
+    "**April Fools has ended.** I've **retrieved** my console from my sister's brief reign—charming as she was, " +
+    "the board belongs on my desk again. ELO and **removesnipe** behave as usual; if you spot a stray oddity from the holiday, we'll set it right."
+  );
 }
 
 /** When non-null, undo/removesnipe is blocked (April Fools Exusiai mode). */

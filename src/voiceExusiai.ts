@@ -11,14 +11,16 @@
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Exusiai's covering the desk today for her sis—April Fools! Snipe scoring's *flipped*: " +
-      "whoever gets tagged *gains* ELO from the shooter (bounty 2× still applies to the mark). " +
-      "Lemuen will fix the math tomorrow~_"
+      "_April Fools heist: Lemuen left her *console* unattended—just for a breath—and I *borrowed* the keys. " +
+      "Fair's fair, she'll repo the desk tomorrow; until then you're stuck with *my* readout. " +
+      "Snipe ELO's *flipped* (tagged player *gains* off the shooter); bounty 2× still tracks the mark; undo's on holiday. " +
+      "Say hi to your operator of the day—and don't tell sis I called it a heist~_"
     );
   }
   return (
-    "**Exusiai** is covering for her sis—April Fools! Snipe ELO is **flipped**: whoever gets sniped **gains** points from the shooter " +
-    "(bounty 2× still applies to the mark). Lemuen can straighten the books later, Leader!"
+    "**April Fools — console acquired.** Lemuen stepped away from her rig; **Exusiai** *definitely* didn't slide the whole board over to her side of the legend. " +
+    "She reclaims it after the joke. Until then: snipe ELO is **flipped** (sniped **gains** from shooter), bounty **2×** still applies to the mark, and **removesnipe** stays off. " +
+    "You're on *my* channel now, Leader—enjoy the chaos."
   );
 }
 
