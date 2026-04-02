@@ -1,18 +1,23 @@
-/**
- * Wiš'adel (Arknights): Sarkaz merc—"Doctor", "idiot", "scum", "assholes", "jackasses", "revenant", "Originium", "boom", "blast", "trash", "nap".
- * @see https://arknights.wiki.gg/wiki/Wi%C5%A1%27adel/Dialogue
+import re
+
+with open('src/voiceRay.ts', 'r') as f:
+    content = f.read()
+
+# I will just write a new file content and save it.
+new_content = """/**
+ * Ray / Iwona Goldenlobster (Arknights): pitsinker calm—"Um", "Yeah", deck/sandbeast/air, practical, gentle.
+ * @see https://arknights.wiki.gg/wiki/Ray/Dialogue
  */
 
 /** Short intro line under the /help title. */
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Oh, Doctor, your old flame really was no good at housekeeping. I've cleaned up the commands and rules below. " +
-      "I'm in a good mood today, so try not to mess it up again~_"
+      "_Um—commands and rules are in the blocks below. Weather on deck looks fine; shout if a lap time smells off~_"
     );
   }
   return (
-    "**Wiš'adel here.** I've laid out the commands and rules below. Skip the boring bits at your own risk, Doctor."
+    "**Ray here.** Below: commands and rules. If something's kaput, tell me—I'll listen."
   );
 }
 
@@ -22,11 +27,11 @@ export function removesnipeDisabledAprilFools(): string | null {
 }
 
 export function helpSnipeUndoLineSlack(slashUndo: string, plainUndo: string): string {
-  return `• \`${slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainUndo}\`.`;
+  return `• \\\`\${slashUndo}\\\` — scrub a bad lap in a thread. In thread composers, use plain \\\`\${plainUndo}\\\`.`;
 }
 
 export function helpSnipeUndoLineDiscord(): string {
-  return "• `/removesnipe <confirmation_id>` — undo one recorded snipe.";
+  return "• `/removesnipe <confirmation_id>` — scrub a bad lap from the board.";
 }
 
 export function snipeConfirmationHeader(params: {
@@ -37,19 +42,19 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Makeup's in the file under ${params.sniperLabel}. Paperwork's tight enough to hurt. Hmph.`;
+      return `Makeup snipe filed for \${params.sniperLabel}—paperwork's tidy. We're good.`;
     }
-    return `Makeup snipe? Logged under ${params.sniperLabel}. Don't make me type it twice, Doctor.`;
+    return `Makeup logged for \${params.sniperLabel}. Yeah, that's the lot.`;
   }
-  return `Boom—tagged. ${params.sniperLabel} keeps the credit; I keep the receipt. Too bad, so sad. Not even ashes left.`;
+  return `Sun's out on that one—\${params.sniperLabel} takes the credit. Splits are on file.`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Countdown's over — exchange:";
+  return "Tracks and exchange—visibility good:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Who's still on their feet:";
+  return "Leaderboard snapshot—breathe easy:";
 }
 
 /** No-op for default voice; Exusiai appends a mirror disclaimer on snipe confirmations. */
@@ -58,30 +63,30 @@ export function snipeConfirmationAprilFoolsMirrorDisclaimer(_platform: "slack" |
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `Wrong nest, Doctor. ${channelRef} or I'm not lighting the fuse on this one.`;
+  return `Wrong pit, Doctor—I'm only timing \${channelRef}. One min, hop over.`;
 }
 
 export function serverNotConfigured(): string {
-  return `No lane wired—someone with keys sets the fun zone first. Oi, you listening?`;
+  return `No snipe lane on the schedule yet—mods need to stake it. Sandbeast and I'll wait.`;
 }
 
 export function removesnipeNeedSlackThread(): string {
   return (
-    `Undo lives in the *thread*—Slack won't run slash from thread composers.` +
-    ` Open it, plain \`removesnipe\`, no slash. Or don't; I'm not your keeper.`
+    `Undo needs the snipe *thread*—Slack won't do slash from thread composers.` +
+    ` Open it, plain \\\`removesnipe\\\`, no slash. That's the drill.`
   );
 }
 
 export function removesnipeNothingInThread(): string {
-  return `Nothing to blow away—wrong page or already clean. Shame.`;
+  return `Nothing to scrub—clean sheet or wrong garage. Happens.`;
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Undone. Story's in the thread—read it before you get clever again.`;
+  return `Undone. Particulars are in the thread—weather's fine out here.`;
 }
 
 export function removesnipeFailed(error: string): string {
-  return `Please, this is no time for excuses—and undo didn't take: ${error}`;
+  return `Um, undo didn't take: \${error}`;
 }
 
 /** Maps known DB errors to readable copy; keeps raw detail out of chat when we have a stable explanation. */
@@ -89,7 +94,7 @@ export function formatRemovesnipeError(error: string): string {
   if (error.includes("cannot_undo_out_of_date_state")) {
     return (
       `I can't roll that snipe back safely—the numbers moved on after it was recorded ` +
-      `(another snipe, a makeup, a duel, or a manual ELO adjust). ` +
+      `(another snipe, a makeup, a duel, or a manual adjust). ` +
       `Undo only works when everyone's current rating still matches what we had right after that shot. ` +
       `If the books truly need fixing, someone with the keys can set ratings with the adjust command.`
     );
@@ -98,80 +103,85 @@ export function formatRemovesnipeError(error: string): string {
 }
 
 export function makeupUsage(slashCommand: string): string {
-  return `Usage: \`${slashCommand}\` <sniper> <sniped1> <sniped2> … — Slack mentions like <@U123>, if you please.`;
+  return `Usage: \\\`\${slashCommand}\\\` <sniper> <sniped1> <sniped2> … — Slack mentions like <@U123>, if you please.`;
 }
 
 export function makeupParseSniperFail(): string {
-  return `Couldn't parse your shooter—gimme a real mention, <@U123> style.`;
+  return `Um, I couldn't read the shooter—try a mention like <@U123>?`;
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
-  return `${callerDisplayName} pulled \`${slashCommand}\`—paper trail's in the thread. Try to keep up, yeah?`;
+  return `\${callerDisplayName} called \\\`\${slashCommand}\\\`—full readout's threading under it.`;
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `Logged—full mess is threaded. Popcorn's on you.`;
+  return `On the board. Thread's got the long version—I'm your friend; I'll wait.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
-  return `${slashCommand} wouldn't cooperate: ${error}`;
+  return `\${slashCommand} wouldn't cooperate: \${error}`;
 }
 
 export function adjustUsage(slashCommand: string): string {
-  return `Usage: \`${slashCommand}\` <user> <delta> — whole numbers only (e.g. 50 or -25).`;
+  return `Usage: \\\`\${slashCommand}\\\` <user> <delta> — whole numbers only (e.g. 50 or -25).`;
 }
 
 export function adjustParseUserFail(): string {
-  return `That user token won't parse. Use a member mention, a raw member id (U…), or their Slack @handle (workspace username).`;
+  return `That user token won't parse. Use a member mention, a raw member id (U…), or their Slack @handle.`;
 }
 
 export function adjustDeltaInvalid(got: string): string {
-  return `The delta must be a whole number. What I got doesn't quite qualify: ${got}`;
+  return `The delta must be a whole number. What I got doesn't quite qualify: \${got}`;
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Books and canvas went *boom*—updated, I mean. Try not to need me to audit you.`;
+  return `Numbers updated, canvas too—we're green. Any problem, you'll solve it?`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
-  return `${slashCommand} refused to play along: ${error}`;
+  return `\${slashCommand} refused to play along: \${error}`;
 }
 
 export function adjustEloForbidden(): string {
-  return `That lever? Not yours—authorized hands only. Doctor's orders, not mine~`;
+  return `That adjust isn't yours—crew lead only, yeah?`;
 }
 
 export function leaderboardFailed(error: string): string {
-  return `Roster fizzled—${error}. Even I need a working fuse sometimes.`;
+  return `Roster fell over: \${error}. Might be comms—might be dust.`;
 }
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
 export function slackLeaderboardPagingInteractivityHint(): string {
-  return "The Prev/Next buttons are missing! Tell whoever holds the keys to turn on Interactivity in the Slack app settings—fix your mess, Doctor.";
+  return (
+    `To get Prev/Next buttons: Slack app → Interactivity & Shortcuts → turn *Interactivity* on. ` +
+    `With *Socket Mode*, no Request URL is needed—events and button clicks use the socket. ` +
+    `With HTTP mode only, set the Request URL to your Bolt endpoint. ` +
+    `Reinstall the app after changing scopes.`
+  );
 }
 
 export function snipesFailed(error: string): string {
-  return `Logbook jammed: ${error}—fix your mess, Doctor.`;
+  return `Logbook jammed: \${error}`;
 }
 
 export function headtoheadFailed(error: string): string {
-  return `Head-to-head's locked up for the moment: ${error}`;
+  return `Head-to-head's locked up for the moment: \${error}`;
 }
 
 export function snipeDuelUsage(slashCommand: string): string {
-  return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points.`;
+  return `Usage: \\\`\${slashCommand}\\\` <@opponent> <duration> <bet> — e.g. \\\`\${slashCommand} @them 7d 50\\\`. Duration: \\\`30m\\\`, \\\`2h\\\`, \\\`7d\\\`, \\\`1w\\\`. Bet is ELO points.`;
 }
 
 export function snipeDuelDurationInvalid(): string {
-  return `That duration doesn't parse. Use something like \`30m\`, \`4h\`, \`7d\`, or \`1w\` (between 1 minute and 90 days).`;
+  return `That duration doesn't parse. Use something like \\\`30m\\\`, \\\`4h\\\`, \\\`7d\\\`, or \\\`1w\\\`.`;
 }
 
 export function snipeDuelBetInvalid(): string {
-  return `The bet must be a positive whole number of ELO points (within reason).`;
+  return `The bet must be a positive whole number of points. Keep it practical.`;
 }
 
 export function snipeDuelSelf(): string {
-  return `You can't duel yourself—pick someone else on the field.`;
+  return `You can't duel yourself—pick someone else on the deck.`;
 }
 
 export function snipeDuelTargetBot(): string {
@@ -179,11 +189,11 @@ export function snipeDuelTargetBot(): string {
 }
 
 export function snipeDuelPostedEphemeral(): string {
-  return `Challenge posted. They can accept or decline in the thread; you can \`cancelduel\` there if you change your mind.`;
+  return `Challenge posted. They can accept or decline in the thread; you can \\\`cancelduel\\\` there if you change your mind.`;
 }
 
 export function snipeDuelFailed(error: string): string {
-  return `The duel paperwork stalled: ${error}`;
+  return `The duel paperwork stalled: \${error}`;
 }
 
 export function duelReplyNotTarget(): string {
@@ -191,7 +201,7 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel.`;
+  return `Accepted. The clock is running — \${endsSummary}. Snipes between you two count toward the duel.`;
 }
 
 export function duelDeclinedPublic(): string {
@@ -204,11 +214,11 @@ export function duelCancelledByChallengerPublic(): string {
 
 /** Non-initiator typed cancelduel (includes challenged party—use declineduel). */
 export function duelCancelNotChallenger(): string {
-  return `Only the challenger may withdraw; if you were challenged, use \`declineduel\` instead.`;
+  return `Only the challenger may withdraw; if you were challenged, use \\\`declineduel\\\` instead.`;
 }
 
 export function leaderboardEmptyFallback(): string {
-  return "_Board's quiet—like the breath before the blast. Give it a sec._";
+  return "_Quiet deck—nobody's clocked a time. First one's gonna feel good._";
 }
 
 export function discordInvalidConfirmationId(): string {
@@ -220,7 +230,7 @@ export function discordNothingToUndo(): string {
 }
 
 export function discordNoSnipedInMakeup(): string {
-  return `I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
+  return `Um, I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
 }
 
 export function implicitSnipeOnlySelfSlack(): string {
@@ -235,7 +245,7 @@ export function implicitSnipeOnlySelfDiscord(): string {
 }
 
 export function implicitSnipeProcessFailed(error: string): string {
-  return `Something fouled the shot: ${error}`;
+  return `Something fouled the shot: \${error}`;
 }
 
 export function snipeImplicitBotsOnlySlack(): string {
@@ -255,39 +265,39 @@ export function adjustTargetIsBot(): string {
 }
 
 export function discordModeratorOnlyCommand(): string {
-  return `That switch is locked to moderators—if you're holding the server keys, try again.`;
+  return `That switch is locked to crew leads—if you're holding the keys, try again.`;
 }
 
 export function discordSnipeChannelSet(channelRef: string): string {
-  return `Understood. This server's snipe lane is now ${channelRef}. I'll keep score there.`;
+  return `Understood. This server's snipe lane is now \${channelRef}. I'll keep score there.`;
 }
 
 export function bountyDailyAnnouncementSlack(params: { dateLabel: string; rankedLines: string[] }): string {
-  const lines = params.rankedLines.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  const lines = params.rankedLines.map((m, i) => `\${i + 1}. \${m}`).join("\\n");
   return (
-    `*Daily bounty* — ${params.dateLabel}\n` +
+    `*Daily bounty* — \${params.dateLabel}\\n` +
     `The first time each mark is *sniped* today, that exchange scores *double ELO* (gain and loss both scaled). ` +
-    `If a mark *snipes* someone else, the books use the usual numbers~\n` +
+    `If a mark *snipes* someone else, the books use the usual numbers~\\n` +
     lines
   );
 }
 
 export function bountyDailyAnnouncementDiscord(params: { dateLabel: string; rankedLines: string[] }): string {
-  const lines = params.rankedLines.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  const lines = params.rankedLines.map((m, i) => `\${i + 1}. \${m}`).join("\\n");
   return (
-    `**Daily bounty** — ${params.dateLabel}\n` +
+    `**Daily bounty** — \${params.dateLabel}\\n` +
     `The first time each mark is **sniped** today, that exchange scores **double ELO** (gain and loss both scaled). ` +
-    `If a mark **snipes** someone else, the books use the usual numbers~\n` +
+    `If a mark **snipes** someone else, the books use the usual numbers~\\n` +
     lines
   );
 }
 
 export function bountyDailyNoTargetsSlack(dateLabel: string): string {
-  return `*Daily bounty* — ${dateLabel}\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
+  return `*Daily bounty* — \${dateLabel}\\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
 }
 
 export function bountyDailyNoTargetsDiscord(dateLabel: string): string {
-  return `**Daily bounty** — ${dateLabel}\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
+  return `**Daily bounty** — \${dateLabel}\\nThere aren't enough human marks on the board yet—no list today. We'll try again when the field fills out~`;
 }
 
 /** Snipe confirmation: section heading when daily bounty (2× ELO) applied to one or more pairs. */
@@ -339,12 +349,12 @@ export function bountySlashDisabled(_platform: "slack" | "discord"): string {
 export function bountySlashNoLedgerYet(platform: "slack" | "discord", dateLabel: string): string {
   if (platform === "slack") {
     return (
-      `*Daily bounty* — ${dateLabel}\n` +
+      `*Daily bounty* — \${dateLabel}\\n` +
       `_I don't have today's marks on file yet. They land after the midnight roll—or shortly after the bot catches up, if it was asleep~_`
     );
   }
   return (
-    `**Daily bounty** — ${dateLabel}\n` +
+    `**Daily bounty** — \${dateLabel}\\n` +
     `*I don't have today's marks on file yet. They land after the midnight roll—or shortly after the bot catches up, if it was asleep~*`
   );
 }
@@ -352,12 +362,12 @@ export function bountySlashNoLedgerYet(platform: "slack" | "discord", dateLabel:
 export function bountySlashEmptyMarks(platform: "slack" | "discord", dateLabel: string): string {
   if (platform === "slack") {
     return (
-      `*Daily bounty* — ${dateLabel}\n` +
+      `*Daily bounty* — \${dateLabel}\\n` +
       `_The board didn't yield enough human marks for a list when the ledger was drawn. Nothing to chase today._`
     );
   }
   return (
-    `**Daily bounty** — ${dateLabel}\n` +
+    `**Daily bounty** — \${dateLabel}\\n` +
     `*The board didn't yield enough human marks for a list when the ledger was drawn. Nothing to chase today.*`
   );
 }
@@ -369,12 +379,12 @@ export function bountySlashListHeader(
 ): string {
   if (platform === "slack") {
     return (
-      `*Daily bounty* — ${dateLabel} (_${timeZoneIana}_)\n` +
+      `*Daily bounty* — \${dateLabel} (_\${timeZoneIana}_)\\n` +
       `_First snipe landing on a mark today scores 2× ELO for that exchange._`
     );
   }
   return (
-    `**Daily bounty** — ${dateLabel} (*${timeZoneIana}*)\n` +
+    `**Daily bounty** — \${dateLabel} (*\${timeZoneIana}*)\\n` +
     `*First snipe landing on a mark today scores 2× ELO for that exchange.*`
   );
 }
@@ -389,17 +399,17 @@ export function bountySlashMarkLine(
   if (platform === "slack") {
     const status = claimed
       ? claimedByDisplayName
-        ? `_claimed today by ${claimedByDisplayName}_`
+        ? `_claimed today by \${claimedByDisplayName}_`
         : "_claimed today_"
       : "_2× still open—first to snipe them wins it_";
-    return `${rank}. ${displayName} — ${status}`;
+    return `\${rank}. \${displayName} — \${status}`;
   }
   const status = claimed
     ? claimedByDisplayName
-      ? `*claimed today* by *${claimedByDisplayName}*`
+      ? `*claimed today* by *\${claimedByDisplayName}*`
       : "*claimed today*"
     : "*2× still open—first to snipe them wins it*";
-  return `${rank}. ${displayName} — ${status}`;
+  return `\${rank}. \${displayName} — \${status}`;
 }
 
 export function bountySlashFooter(platform: "slack" | "discord"): string {
@@ -410,7 +420,7 @@ export function bountySlashFooter(platform: "slack" | "discord"): string {
 }
 
 export function setBountyUsage(slashPath: string): string {
-  return `Usage: \`${slashPath}\` @user1 @user2 … — up to the day's mark count (see BOUNTY_TOP_N). Same permission as adjustelo.`;
+  return `Usage: \\\`\${slashPath}\\\` @user1 @user2 … — up to the day's mark count (see BOUNTY_TOP_N). Same permission as adjustelo.`;
 }
 
 export function setBountyDisabled(platform: "slack" | "discord"): string {
@@ -425,7 +435,7 @@ export function setBountyNoMentions(): string {
 }
 
 export function setBountyTooManyDropped(maxMarks: number): string {
-  return `Only the first ${maxMarks} mark(s) are kept (BOUNTY_TOP_N).`;
+  return `Only the first \${maxMarks} mark(s) are kept (BOUNTY_TOP_N).`;
 }
 
 export function setBountyOperatorFooter(platform: "slack" | "discord"): string {
@@ -436,7 +446,7 @@ export function setBountyOperatorFooter(platform: "slack" | "discord"): string {
 }
 
 export function setBountyFailed(context: string, msg: string): string {
-  return `${context} failed: ${msg}`;
+  return `\${context} failed: \${msg}`;
 }
 
 export function setBountySuccessEphemeral(): string {
@@ -445,11 +455,11 @@ export function setBountySuccessEphemeral(): string {
 
 export function adjustBountyUsage(slashPath: string): string {
   return (
-    `Usage: \`${slashPath}\` \`unclaim\` <@mark> — reopen 2× on one mark · ` +
-    `\`${slashPath}\` \`clear\` — reopen 2× on every mark today · ` +
-    `\`${slashPath}\` \`claim\` <@sniper> <@mark> — record first-snipe manually · ` +
-    `\`${slashPath}\` \`add\` <@mark> … — append marks (deduped, capped at BOUNTY_TOP_N) · ` +
-    `\`${slashPath}\` \`remove\` <@mark> … — drop marks from today's list (and their first-snipe claims). Same access as adjustelo.`
+    `Usage: \\\`\${slashPath}\\\` \\\`unclaim\\\` <@mark> — reopen 2× on one mark · ` +
+    `\\\`\${slashPath}\\\` \\\`clear\\\` — reopen 2× on every mark today · ` +
+    `\\\`\${slashPath}\\\` \\\`claim\\\` <@sniper> <@mark> — record first-snipe manually · ` +
+    `\\\`\${slashPath}\\\` \\\`add\\\` <@mark> … — append marks (deduped, capped at BOUNTY_TOP_N) · ` +
+    `\\\`\${slashPath}\\\` \\\`remove\\\` <@mark> … — drop marks from today's list (and their first-snipe claims). Same access as adjustelo.`
   );
 }
 
@@ -480,13 +490,13 @@ export function adjustBountyRemoveNoneOnList(): string {
 export function adjustBountyListEmptyAfterRemove(platform: "slack" | "discord", dateLabel: string): string {
   if (platform === "slack") {
     return (
-      `*Daily bounty* — ${dateLabel}\n` +
-      `_Every mark was struck from today's manual list—use setbounty or \`add\` when you're ready for new quarry._`
+      `*Daily bounty* — \${dateLabel}\\n` +
+      `_Every mark was struck from today's manual list—use setbounty or \\\`add\\\` when you're ready for new quarry._`
     );
   }
   return (
-    `**Daily bounty** — ${dateLabel}\n` +
-    `*Every mark was struck from today's manual list—use setbounty or \`add\` when you're ready for new quarry.*`
+    `**Daily bounty** — \${dateLabel}\\n` +
+    `*Every mark was struck from today's manual list—use setbounty or \\\`add\\\` when you're ready for new quarry.*`
   );
 }
 
@@ -495,7 +505,7 @@ export function adjustBountyNoMarkForUnclaim(): string {
 }
 
 export function adjustBountyNotClaimed(markLabel: string): string {
-  return `No first-snipe claim on file today for ${markLabel}—nothing to remove.`;
+  return `No first-snipe claim on file today for \${markLabel}—nothing to remove.`;
 }
 
 export function adjustBountyClearNone(): string {
@@ -507,7 +517,7 @@ export function adjustBountyClaimNeedTwoMentions(): string {
 }
 
 export function adjustBountyMarkNotOnList(markLabel: string): string {
-  return `${markLabel} isn't on today's bounty mark list—set marks with setbounty first, or pick a listed mark.`;
+  return `\${markLabel} isn't on today's bounty mark list—set marks with setbounty first, or pick a listed mark.`;
 }
 
 export function adjustBountyClaimSelf(): string {
@@ -517,26 +527,26 @@ export function adjustBountyClaimSelf(): string {
 export function adjustBountyPublicUnclaim(platform: "slack" | "discord", params: { dateLabel: string; markName: string }): string {
   if (platform === "slack") {
     return (
-      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
-      `Removed today's first-snipe claim on *${params.markName}*—that mark's 2× slot is open again on the next qualifying snipe.`
+      `*Bounty ledger (operator)* — \${params.dateLabel}\\n` +
+      `Removed today's first-snipe claim on *\${params.markName}*—that mark's 2× slot is open again on the next qualifying snipe.`
     );
   }
   return (
-    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
-    `Removed today's first-snipe claim on **${params.markName}**—that mark's 2× slot is open again.`
+    `**Bounty ledger (operator)** — \${params.dateLabel}\\n` +
+    `Removed today's first-snipe claim on **\${params.markName}**—that mark's 2× slot is open again.`
   );
 }
 
 export function adjustBountyPublicClear(platform: "slack" | "discord", params: { dateLabel: string; count: number }): string {
   if (platform === "slack") {
     return (
-      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
-      `Cleared *${params.count}* first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
+      `*Bounty ledger (operator)* — \${params.dateLabel}\\n` +
+      `Cleared *\${params.count}* first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
     );
   }
   return (
-    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
-    `Cleared **${params.count}** first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
+    `**Bounty ledger (operator)** — \${params.dateLabel}\\n` +
+    `Cleared **\${params.count}** first-snipe claim(s)—every listed mark can earn 2× again on first snipe today.`
   );
 }
 
@@ -546,13 +556,13 @@ export function adjustBountyPublicClaim(
 ): string {
   if (platform === "slack") {
     return (
-      `*Bounty ledger (operator)* — ${params.dateLabel}\n` +
-      `Recorded a manual first snipe: *${params.sniperName}* → *${params.markName}* (2× on that mark counts as claimed for today).`
+      `*Bounty ledger (operator)* — \${params.dateLabel}\\n` +
+      `Recorded a manual first snipe: *\${params.sniperName}* → *\${params.markName}* (2× on that mark counts as claimed for today).`
     );
   }
   return (
-    `**Bounty ledger (operator)** — ${params.dateLabel}\n` +
-    `Recorded a manual first snipe: **${params.sniperName}** → **${params.markName}** (2× on that mark counts as claimed for today).`
+    `**Bounty ledger (operator)** — \${params.dateLabel}\\n` +
+    `Recorded a manual first snipe: **\${params.sniperName}** → **\${params.markName}** (2× on that mark counts as claimed for today).`
   );
 }
 
@@ -561,7 +571,7 @@ export function adjustBountySuccessEphemeral(): string {
 }
 
 export function adjustBountyFailed(context: string, error: string): string {
-  return `${context} didn't take: ${error}`;
+  return `\${context} didn't take: \${error}`;
 }
 
 export function graphViewerNotConfigured(): string {
@@ -570,25 +580,25 @@ export function graphViewerNotConfigured(): string {
 
 export function graphCodeEphemeral(params: { code: string; siteUrl: string; redeemSeconds: number }): string {
   return (
-    `Here's your one-time code for the snipe graph: **${params.code}**\n` +
-    `Enter it on the site within **${params.redeemSeconds} seconds** (you'll get a longer session once it accepts).\n` +
-    `${params.siteUrl}\n`
+    `Here's your one-time code for the snipe graph: **\${params.code}**\\n` +
+    `Enter it on the site within **\${params.redeemSeconds} seconds** (you'll get a longer session once it accepts).\\n` +
+    `\${params.siteUrl}\\n`
   );
 }
 
 /** Slack mrkdwn (slash / ephemeral); avoids Discord-style **bold**. */
 export function graphCodeEphemeralSlack(params: { code: string; siteUrl: string; redeemSeconds: number }): string {
   return (
-    `Here's your one-time code for the snipe graph: *${params.code}*\n` +
-    `Enter it on the site within *${params.redeemSeconds} seconds* (you'll get a longer session once it accepts).\n` +
-    `${params.siteUrl}\n`
+    `Here's your one-time code for the snipe graph: *\${params.code}*\\n` +
+    `Enter it on the site within *\${params.redeemSeconds} seconds* (you'll get a longer session once it accepts).\\n` +
+    `\${params.siteUrl}\\n`
   );
 }
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
-  help: "Manual of chaos: rules, commands, where the tripwires are.",
-  leaderboard: "Who's king of the scrapheap today—have a look.",
+  help: "Deck manual: commands, rules, fair air.",
+  leaderboard: "Who's out front on the board today?",
   show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",
@@ -602,3 +612,7 @@ export const discordSlashDescriptions = {
   bounty: "Today's bounty marks and whether each 2× reward is still open.",
   snipegraph: "Get a 1-minute code to open the live snipe graph for this server in the browser.",
 } as const;
+"""
+
+with open('src/voiceRay.ts', 'w') as f:
+    f.write(new_content)

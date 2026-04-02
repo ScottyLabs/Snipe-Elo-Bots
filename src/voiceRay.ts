@@ -146,12 +146,7 @@ export function leaderboardFailed(error: string): string {
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
 export function slackLeaderboardPagingInteractivityHint(): string {
-  return (
-    `To get Prev/Next buttons: Slack app → Interactivity & Shortcuts → turn *Interactivity* on. ` +
-    `With *Socket Mode*, no Request URL is needed—events and button clicks use the socket. ` +
-    `With HTTP mode only, set the Request URL to your Bolt endpoint. ` +
-    `Reinstall the app after changing scopes.`
-  );
+  return "The Prev/Next buttons are missing! Someone with the keys needs to enable Interactivity in the Slack app settings.";
 }
 
 export function snipesFailed(error: string): string {
@@ -224,7 +219,7 @@ export function discordNothingToUndo(): string {
 }
 
 export function discordNoSnipedInMakeup(): string {
-  return `I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
+  return `Um, I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
 }
 
 export function implicitSnipeOnlySelfSlack(): string {

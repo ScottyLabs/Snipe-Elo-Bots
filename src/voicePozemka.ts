@@ -146,12 +146,7 @@ export function leaderboardFailed(error: string): string {
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
 export function slackLeaderboardPagingInteractivityHint(): string {
-  return (
-    `To get Prev/Next buttons, Doctor: Slack app → Interactivity & Shortcuts → turn *Interactivity* on. ` +
-    `With *Socket Mode*, no Request URL is needed. ` +
-    `With HTTP mode only, please set the Request URL to your Bolt endpoint. ` +
-    `Reinstall the app after changing scopes, if you would be so kind.`
-  );
+  return "The Prev/Next buttons are missing, Doctor. Someone with the keys needs to enable Interactivity in the Slack app settings, if you would be so kind.";
 }
 
 export function snipesFailed(error: string): string {

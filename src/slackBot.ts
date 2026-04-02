@@ -108,7 +108,7 @@ async function buildSlackLeaderboardBlockKit(args: {
 
   // Section mrkdwn hard limit 3000 chars; avoid Slack rejecting / erroring on overflow.
   if (mrkdwn.length > 2950) {
-    mrkdwn = `${mrkdwn.slice(0, 2940).trimEnd()}…\n_(truncated — narrow the board or raise page size in env.)_`;
+    mrkdwn = `${mrkdwn.slice(0, 2940).trimEnd()}…\n_(truncated — narrow the board or ask whoever holds the keys to raise the page size.)_`;
   }
   if (plainText.length > 3500) {
     plainText = `${plainText.slice(0, 3490).trimEnd()}…`;
