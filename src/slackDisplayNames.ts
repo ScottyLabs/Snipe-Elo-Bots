@@ -1,6 +1,7 @@
 /** Resolve Slack user display names without @mentions (no pings). Cached to limit users.info traffic. */
 
 import type { PlayerRating } from "./db";
+import { leaderboardHumanCap } from "./leaderboardConfig";
 import { parseUserToken } from "./parse";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -103,16 +104,17 @@ export async function filterSlackGraphHumanPlayerIds(client: SlackInfoClient, us
   return out;
 }
 
-/** Walk rating-sorted players; skip bots and deleted until `maxHumans` humans collected (for pagination). */
+/** Walk rating-sorted players; skip bots and deleted. `maxHumans` ≤ 0 = no cap (all humans). */
 export async function takeSlackHumanLeaderboardPaged(
   client: SlackInfoClient,
   sortedPlayers: PlayerRating[],
   maxHumans: number
 ): Promise<{ allHumans: PlayerRating[]; displayNames: Map<string, string> }> {
+  const cap = leaderboardHumanCap(maxHumans);
   const allHumans: PlayerRating[] = [];
   const displayNames = new Map<string, string>();
   for (const p of sortedPlayers) {
-    if (allHumans.length >= maxHumans) break;
+    if (allHumans.length >= cap) break;
     const snap = await getSlackUserProfileCached(client, p.playerId);
     if (!snap || snap.isBot || snap.deleted) continue;
     allHumans.push(p);

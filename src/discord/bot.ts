@@ -205,7 +205,6 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
     ],
@@ -341,7 +340,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           sc
             .setName("recalc")
             .setDescription(
-              "Rebuild today's bounty marks from the leaderboard; clear all first-snipe (2×) claims for today (mods)"
+              "Recalc today's bounty from the leaderboard; clear today's first-snipe (2x) claims (mods)."
             )
         ),
       new SlashCommandBuilder()

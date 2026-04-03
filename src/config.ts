@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { eloEnv } from "./eloEnv";
+import { parseLeaderboardTopN } from "./leaderboardConfig";
 import { normalizeSlashCommand } from "./slashCommands";
 
 // Avoid noisy "injecting env (0) from .env" on Railway (vars come from the platform, not a file).
@@ -26,7 +27,7 @@ export const config = {
   elo: eloEnv,
   leaderboard: {
     title: process.env.LEADERBOARD_CANVAS_TITLE ?? "ELO Leaderboard",
-    topN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
+    topN: parseLeaderboardTopN(process.env.LEADERBOARD_TOP_N),
     /** Humans per page for chat leaderboard + first canvas page. */
     pageSize: Math.max(3, Number(process.env.LEADERBOARD_PAGE_SIZE ?? 12)),
     /** If set, use this canvas instead of creating a new one (Slack SDK has no canvases.list). */

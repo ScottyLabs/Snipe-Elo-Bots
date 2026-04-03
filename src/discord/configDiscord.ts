@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { parseLeaderboardTopN } from "../leaderboardConfig";
 dotenv.config({ quiet: true });
 
 function requireEnv(name: string): string {
@@ -53,7 +54,7 @@ export const discordConfig = {
   snipeRequireImage: !["0", "false", "no", "off"].includes(
     (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()
   ),
-  leaderboardTopN: Number(process.env.LEADERBOARD_TOP_N ?? 50),
+  leaderboardTopN: parseLeaderboardTopN(process.env.LEADERBOARD_TOP_N),
   leaderboardPageSize: Math.max(3, Number(process.env.LEADERBOARD_PAGE_SIZE ?? 12)),
   leaderboardTitle: process.env.LEADERBOARD_TITLE ?? "ELO Leaderboard",
   /** Public base URL for the snipe graph site (no trailing slash), e.g. https://your-app.up.railway.app */

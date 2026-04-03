@@ -20,6 +20,7 @@ let network = null;
 let fullNodes = [];
 let fullEdges = [];
 let guildName = "";
+let graphSearchInputWired = false;
 /** Global ELO rank (1-based) from last full graph load; ties break by player id like the server. */
 let fullNodeRankById = new Map();
 let fullNodeRankCount = 0;
@@ -49,6 +50,71 @@ function computeEloRankMap(nodes) {
 }
 
 /** Vis-network uses \\n in label for two lines; keeps one line when short. */
+function apiNodeById(id) {
+  const s = String(id);
+  for (let i = 0; i < fullNodes.length; i++) {
+    if (String(fullNodes[i].id) === s) return fullNodes[i];
+  }
+  return null;
+}
+
+/** Case-insensitive substring match on display label and raw id (snowflake). */
+function nodeMatchesSearchQuery(apiNode, qLower) {
+  if (!qLower) return true;
+  if (!apiNode) return false;
+  const label = String(apiNode.label || "").toLowerCase();
+  const id = String(apiNode.id || "").toLowerCase();
+  return label.includes(qLower) || id.includes(qLower);
+}
+
+/**
+ * Dim nodes (and edges between two non-matching nodes) when the search box has text.
+ */
+function applySearchDimming() {
+  if (!network || !network.body || !network.body.data) return;
+  const raw = document.getElementById("graphSearch");
+  const q = raw && raw.value ? String(raw.value).trim().toLowerCase() : "";
+  const nodesDs = network.body.data.nodes;
+  const edgesDs = network.body.data.edges;
+  const nodeUpdates = [];
+  const edgeUpdates = [];
+
+  (nodesDs.get() || []).forEach(function (node) {
+    const api = apiNodeById(node.id);
+    const match = nodeMatchesSearchQuery(api, q);
+    nodeUpdates.push({ id: node.id, opacity: match ? 1 : 0.2 });
+  });
+
+  (edgesDs.get() || []).forEach(function (edge) {
+    const fromApi = apiNodeById(edge.from);
+    const toApi = apiNodeById(edge.to);
+    const fromM = nodeMatchesSearchQuery(fromApi, q);
+    const toM = nodeMatchesSearchQuery(toApi, q);
+    const edgeBright = !q || fromM || toM;
+    edgeUpdates.push({ id: edge.id, opacity: edgeBright ? 1 : 0.12 });
+  });
+
+  nodesDs.update(nodeUpdates);
+  edgesDs.update(edgeUpdates);
+}
+
+function wireGraphSearchInput() {
+  if (graphSearchInputWired) return;
+  const el = document.getElementById("graphSearch");
+  if (!el) return;
+  el.addEventListener("input", function () {
+    applySearchDimming();
+  });
+  el.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      el.value = "";
+      applySearchDimming();
+      el.blur();
+    }
+  });
+  graphSearchInputWired = true;
+}
+
 function displayLabelTwoLines(raw) {
   const name = String(raw).trim();
   const oneLineOk = 15;
@@ -169,6 +235,7 @@ function buildVisData(nodes, edges, focusId) {
       label: displayLabelTwoLines(n.label),
       title,
       font: nodeFont,
+      opacity: 1,
       color: {
         background: c.bg,
         border: c.border,
@@ -184,6 +251,7 @@ function buildVisData(nodes, edges, focusId) {
       to: e.to,
       label: String(e.count),
       title: baseCount,
+      opacity: 1,
     };
     if (focusId) {
       if (e.from === focusId) {
@@ -215,6 +283,7 @@ function applyGraphSubset(focusId) {
   network.setData(data);
   network.setOptions({ physics: { enabled: true } });
   network.stabilize();
+  applySearchDimming();
 }
 
 function showFullGraph() {
@@ -223,6 +292,7 @@ function showFullGraph() {
   network.setData(data);
   network.setOptions({ physics: { enabled: true } });
   network.stabilize();
+  applySearchDimming();
   document.getElementById("panel").classList.add("hidden");
   document.getElementById("resetViewBtn").classList.add("hidden");
 }
@@ -332,7 +402,9 @@ async function loadGraph() {
     network.destroy();
     network = null;
   }
+  const searchWrap = document.getElementById("graphSearchWrap");
   if (!fullNodes.length) {
+    if (searchWrap) searchWrap.classList.add("hidden");
     fullNodeRankById = new Map();
     fullNodeRankCount = 0;
     mount.style.display = "flex";
@@ -354,9 +426,12 @@ async function loadGraph() {
   mount.style.fontSize = "";
   mount.style.textAlign = "";
   mount.style.padding = "";
+  if (searchWrap) searchWrap.classList.remove("hidden");
+  wireGraphSearchInput();
   const visData = buildVisData(fullNodes, fullEdges);
   network = new vis.Network(mount, visData, visOpts);
   network.on("click", onNodeClick);
+  applySearchDimming();
 }
 
 async function redeem() {
@@ -401,6 +476,10 @@ function logout() {
   document.getElementById("logoutBtn").classList.add("hidden");
   document.getElementById("resetViewBtn").classList.add("hidden");
   document.getElementById("panel").classList.add("hidden");
+  const sw = document.getElementById("graphSearchWrap");
+  if (sw) sw.classList.add("hidden");
+  const gs = document.getElementById("graphSearch");
+  if (gs) gs.value = "";
 }
 
 async function boot() {

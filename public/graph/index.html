@@ -31,6 +31,16 @@
 
     <div id="panel" class="panel hidden" aria-live="polite"></div>
     <div class="hud">
+      <div id="graphSearchWrap" class="graph-search-wrap hidden">
+        <label class="sr-only" for="graphSearch">Search players</label>
+        <input
+          type="search"
+          id="graphSearch"
+          placeholder="Search players…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
       <button type="button" id="resetViewBtn" class="secondary hidden">Full graph</button>
       <button type="button" id="logoutBtn" class="secondary hidden">Lock</button>
     </div>

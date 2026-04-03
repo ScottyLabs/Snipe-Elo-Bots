@@ -199,7 +199,45 @@ button:disabled {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  max-width: min(100vw - 24px, 520px);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.graph-search-wrap {
+  flex: 1 1 160px;
+  max-width: min(220px, 42vw);
+  min-width: 120px;
+}
+
+.graph-search-wrap input {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 0.8rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.graph-search-wrap input::placeholder {
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.5;
 }
 
 .hud button {

@@ -1,5 +1,6 @@
 import type { Client, Guild } from "discord.js";
 import type { PlayerRating } from "./db";
+import { leaderboardHumanCap } from "./leaderboardConfig";
 
 /** Member display names without @mentions (no pings). Cached per guild. */
 
@@ -139,16 +140,17 @@ export async function filterDiscordGraphHumanPlayerIds(guild: Guild, userIds: st
   return out;
 }
 
-/** Rating-sorted humans up to `maxHumans` (for pagination). */
+/** Rating-sorted humans. `maxHumans` ≤ 0 = no cap (all non-bot players). */
 export async function takeDiscordHumanLeaderboardPaged(
   guild: Guild,
   sortedPlayers: PlayerRating[],
   maxHumans: number
 ): Promise<{ allHumans: PlayerRating[]; nameMap: Map<string, string> }> {
+  const cap = leaderboardHumanCap(maxHumans);
   const allHumans: PlayerRating[] = [];
   const nameMap = new Map<string, string>();
   for (const p of sortedPlayers) {
-    if (allHumans.length >= maxHumans) break;
+    if (allHumans.length >= cap) break;
     const e = await getDiscordUserEntryCached(guild, p.playerId);
     if (e.isBot) continue;
     allHumans.push(p);
