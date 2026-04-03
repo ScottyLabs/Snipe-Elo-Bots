@@ -15,6 +15,7 @@ async function main() {
   startGraphHttpServer(port, {
     db,
     selfBotUserIdRef,
+    discordClientRef: clientRef,
     getGuild: async (gid) => {
       const c = clientRef.current;
       if (!c) return null;

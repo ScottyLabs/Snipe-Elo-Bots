@@ -205,6 +205,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
     ],

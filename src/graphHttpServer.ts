@@ -1,9 +1,13 @@
-import type { Guild } from "discord.js";
+import type { Client, Guild } from "discord.js";
 import fs from "fs";
 import http from "http";
 import path from "path";
 import type { EloDb } from "./db";
-import { filterDiscordGraphHumanPlayerIds, resolveDiscordDisplayNames } from "./discordDisplayNames";
+import {
+  filterDiscordGraphHumanPlayerIds,
+  resolveDiscordGraphLabels,
+  resolveDiscordGraphLabelsFromClient,
+} from "./discordDisplayNames";
 import { collectIdsFromDirectedPairs } from "./headToHead";
 import { opsLog } from "./opsLog";
 import { SNIPES_LOG_LIMIT, buildSnipesApiPayload, collectIdsForSnipeLog } from "./snipeHistory";
@@ -92,6 +96,8 @@ export type GraphHttpOpts = {
   getGuild: (guildId: string) => Promise<Guild | null>;
   /** Set to the logged-in Discord bot user id after ready; that user is omitted from the graph. */
   selfBotUserIdRef?: { current: string | null };
+  /** Lets the graph API resolve usernames before `onReady` or when the guild isn’t cached yet. */
+  discordClientRef?: { current: Client | null };
 };
 
 /** Discord or Slack: resolve labels for graph + player panel APIs. */
@@ -245,13 +251,17 @@ export async function handleGraphSiteRequest(
 }
 
 export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Server {
-  const { db, getGuild, selfBotUserIdRef } = opts;
+  const { db, getGuild, selfBotUserIdRef, discordClientRef } = opts;
   const platformCtx: GraphHttpPlatformContext = {
     db,
     guildDisplayName: async (guildId) => (await getGuild(guildId))?.name ?? "Server",
     resolveDisplayNamesForGuild: async (guildId, userIds) => {
+      if (userIds.length === 0) return new Map();
       const guild = await getGuild(guildId);
-      return guild && userIds.length > 0 ? resolveDiscordDisplayNames(guild, userIds) : new Map();
+      if (guild) return resolveDiscordGraphLabels(guild, userIds);
+      const client = discordClientRef?.current;
+      if (client) return resolveDiscordGraphLabelsFromClient(client, userIds);
+      return new Map();
     },
     isGuildResolvableForPlayerPanel: async (guildId) => Boolean(await getGuild(guildId)),
     filterGraphHumanPlayerIds: async (guildId, userIds) => {
