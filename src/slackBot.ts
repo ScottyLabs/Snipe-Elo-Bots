@@ -41,6 +41,7 @@ import { L } from "./voice";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
 import { appendManualBountyTargets, applyManualBountyTargets, removeManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
+import { bountyRecalcSuccessEphemeral, executeSlackBountyRecalc } from "./bountyRecalc";
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
 import { slackGraphBoltCustomRoutes } from "./graphBoltRoutes";
@@ -249,6 +250,7 @@ function formatSlackHelpText(): string {
     `• \`${c.slashSnipegraph}\` — one-time code to open the snipe network graph in the browser (\`GRAPH_PUBLIC_BASE_URL\` on the host).`,
     `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
     `• \`${c.slashBounty}\` — today's bounty marks and whether each 2× slot is still open.`,
+    `• \`${c.slashBounty} recalc\` — rebuild today's marks from the leaderboard and clear all first-snipe (2×) claims (same allowlist as adjustelo).`,
     "",
     "*Scoring / moderation*",
     `• \`${c.slashMakeup}\` <sniper> <sniped...> — log a snipe that was missed.`,
@@ -929,6 +931,55 @@ export async function startSlackBot(params: {
     await ack();
     if (command.channel_id !== config.slack.channelId) {
       await wrongChannelEphemeral(respond);
+      return;
+    }
+    const bountyTokens = command.text.trim().split(/\s+/).filter(Boolean);
+    const wantsRecalc =
+      bountyTokens.length >= 1 && bountyTokens[0].toLowerCase() === "recalc";
+    if (wantsRecalc) {
+      if (bountyTokens.length !== 1) {
+        await respond({
+          response_type: "ephemeral",
+          text: `Use \`${config.slackOps.slashBounty}\` for status or \`${config.slackOps.slashBounty} recalc\` only—no extra arguments.`,
+        });
+        return;
+      }
+      if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(command.user_id)) {
+        opsLog("command.slash.bounty.recalc.denied", { userId: command.user_id });
+        await respond({ response_type: "ephemeral", text: L.adjustEloForbidden() });
+        return;
+      }
+      try {
+        const result = await executeSlackBountyRecalc({
+          client,
+          db: params.db,
+          guildId: SLACK_GUILD_ID,
+          channelId: command.channel_id,
+        });
+        if (!result.ok) {
+          await respond({ response_type: "ephemeral", text: result.ephemeral });
+          return;
+        }
+        await client.chat.postMessage({
+          channel: command.channel_id,
+          text: result.channelText,
+          mrkdwn: true,
+        });
+        await respond({
+          response_type: "ephemeral",
+          text: bountyRecalcSuccessEphemeral(result.claimsCleared),
+        });
+        opsLog("command.slash.bounty.recalc", {
+          userId: command.user_id,
+          channelId: command.channel_id,
+          claimsCleared: result.claimsCleared,
+          markCount: result.targetIds.length,
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await respond({ response_type: "ephemeral", text: `Bounty recalc failed: ${msg}` });
+        opsLog("command.slash.bounty.recalc.error", { error: msg });
+      }
       return;
     }
     try {
@@ -1667,6 +1718,50 @@ export async function startSlackBot(params: {
         }
 
         if (isCommandBody(lower, plainCmd.bounty)) {
+          const after = lower === plainCmd.bounty ? "" : lower.slice(plainCmd.bounty.length).trim();
+          const bt = after.split(/\s+/).filter(Boolean);
+          if (bt[0] === "recalc") {
+            if (bt.length !== 1) {
+              await postEphemeral(
+                `Use plain \`${plainCmd.bounty}\` for status or \`${plainCmd.bounty} recalc\` only.`
+              );
+              return;
+            }
+            if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(userId)) {
+              opsLog("command.text.bounty.recalc.denied", { userId });
+              await postEphemeral(L.adjustEloForbidden());
+              return;
+            }
+            try {
+              const result = await executeSlackBountyRecalc({
+                client,
+                db: params.db,
+                guildId: SLACK_GUILD_ID,
+                channelId,
+              });
+              if (!result.ok) {
+                await postEphemeral(result.ephemeral);
+                return;
+              }
+              await client.chat.postMessage({
+                channel: channelId,
+                ...(threadTs ? { thread_ts: threadTs } : {}),
+                text: result.channelText,
+                mrkdwn: true,
+              });
+              await postEphemeral(bountyRecalcSuccessEphemeral(result.claimsCleared));
+              opsLog("command.text.bounty.recalc", {
+                userId,
+                channelId,
+                claimsCleared: result.claimsCleared,
+                markCount: result.targetIds.length,
+              });
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              await postEphemeral(`Bounty recalc failed: ${msg}`);
+            }
+            return;
+          }
           try {
             const bountyFbText = await buildSlackBountyStatusMarkdown(client);
             await client.chat.postMessage({

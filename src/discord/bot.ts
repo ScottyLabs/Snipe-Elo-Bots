@@ -37,6 +37,7 @@ import { purgeDiscordBotPlayersFromDb } from "../purgeBotPlayers";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "../bounty";
 import { appendManualBountyTargets, applyManualBountyTargets, removeManualBountyTargets } from "../bountyManual";
 import { bountyEnv } from "../bountyEnv";
+import { bountyRecalcSuccessEphemeral, executeDiscordBountyRecalc } from "../bountyRecalc";
 import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
@@ -176,7 +177,8 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "• `/leaderboard` / `/show_leaderboard` — post the standings (paged; Prev/Next on the message).",
     "• `/snipes [player]` — latest snipes as shooter and as target.",
     "• `/headtohead` — head-to-head matrix image (active records only).",
-    "• `/bounty` — today's bounty marks and whether each 2× reward is still open.",
+    "• `/bounty view` — today's bounty marks and whether each 2× reward is still open.",
+    "• `/bounty recalc` — rebuild today's marks from the leaderboard and clear all 2× claims (moderators).",
     "• `/snipegraph` — one-time code (1 min) to open the snipe network graph in the browser (`GRAPH_PUBLIC_BASE_URL` on the host).",
     "",
     "**Scoring / moderation**",
@@ -330,7 +332,17 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         .setDescription(L.discordSlashDescriptions.headtohead),
       new SlashCommandBuilder()
         .setName("bounty")
-        .setDescription(L.discordSlashDescriptions.bounty),
+        .setDescription("Today's bounty list: view marks or recalc from the leaderboard (mods).")
+        .addSubcommand((sc) =>
+          sc.setName("view").setDescription(L.discordSlashDescriptions.bounty)
+        )
+        .addSubcommand((sc) =>
+          sc
+            .setName("recalc")
+            .setDescription(
+              "Rebuild today's bounty marks from the leaderboard; clear all first-snipe (2×) claims for today (mods)"
+            )
+        ),
       new SlashCommandBuilder()
         .setName("snipegraph")
         .setDescription(L.discordSlashDescriptions.snipegraph),
@@ -615,6 +627,46 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     if (interaction.commandName === "bounty") {
       if (!interaction.guild) {
         await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+        return;
+      }
+      const sub = interaction.options.getSubcommand(true);
+      if (sub === "recalc") {
+        if (!isDiscordModerator(interaction)) {
+          await interaction.reply({ content: L.adjustEloForbidden(), ephemeral: true });
+          return;
+        }
+        const chId = getGuildSnipeChannelId(db, interaction.guild.id);
+        if (!chId) {
+          await interaction.reply({ content: L.serverNotConfigured(), ephemeral: true });
+          return;
+        }
+        await interaction.deferReply({ ephemeral: true });
+        try {
+          const result = await executeDiscordBountyRecalc({
+            client,
+            db,
+            guildId: interaction.guild.id,
+            channelId: chId,
+          });
+          if (!result.ok) {
+            await interaction.editReply({ content: result.ephemeral });
+            return;
+          }
+          const ch = await interaction.guild.channels.fetch(chId).catch(() => null);
+          if (ch?.isTextBased()) {
+            await ch.send({ content: result.channelText });
+          }
+          await interaction.editReply({ content: bountyRecalcSuccessEphemeral(result.claimsCleared) });
+          opsLog("discord.bounty.recalc", {
+            guildId: interaction.guild.id,
+            userId: interaction.user.id,
+            claimsCleared: result.claimsCleared,
+            markCount: result.targetIds.length,
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          await interaction.editReply({ content: `Bounty recalc failed: ${msg}` }).catch(() => {});
+        }
         return;
       }
       await interaction.deferReply();

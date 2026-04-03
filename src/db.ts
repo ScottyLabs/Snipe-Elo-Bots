@@ -336,6 +336,12 @@ export class EloDb {
     stmt.run(this.metaKey(guildId, key), value);
   }
 
+  /** Remove a guild meta key if present (e.g. clear manual bounty lock). */
+  deleteMeta(guildId: string, key: string): void {
+    const r = this.db.prepare(`DELETE FROM kv WHERE key = ?`).run(this.metaKey(guildId, key));
+    if (r.changes > 0) this.checkpoint();
+  }
+
   ensurePlayers(guildId: string, playerIds: string[]) {
     const now = Date.now();
     const insert = this.db.prepare(
