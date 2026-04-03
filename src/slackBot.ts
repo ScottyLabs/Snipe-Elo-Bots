@@ -25,6 +25,7 @@ import {
   resolveSlackUserTokenToUserId,
   takeSlackHumanLeaderboardPaged,
 } from "./slackDisplayNames";
+import { buildSlackSnipeConfirmationPostPayload } from "./slackSnipeGifPost";
 import { SLACK_GUILD_ID } from "./tenants";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
 import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
@@ -773,7 +774,19 @@ export async function startSlackBot(params: {
       bountyFirstPairIndices: result.bountyFirstPairIndices,
     });
 
-    const confirmationTs = await postToThread(args.channelId, args.threadTs, confirmationText);
+    let confirmationTs: string | undefined;
+    try {
+      const payload = await buildSlackSnipeConfirmationPostPayload(confirmationText);
+      const posted = await app.client.chat.postMessage({
+        channel: args.channelId,
+        thread_ts: args.threadTs,
+        ...payload,
+      });
+      confirmationTs = posted?.ts as string | undefined;
+    } catch {
+      const posted = await postToThread(args.channelId, args.threadTs, confirmationText);
+      confirmationTs = posted;
+    }
     if (confirmationTs) {
       params.db.setConfirmationMessageTs(SLACK_GUILD_ID, result.snipeId, confirmationTs);
     }
