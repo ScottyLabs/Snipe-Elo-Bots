@@ -54,6 +54,13 @@
         "should_escape": false
       },
       {
+        "command": "/poll",
+        "url": "https://example.com/slack/events",
+        "description": "Create a poll, list active polls, or jump to one by number",
+        "usage_hint": "list | check 1 | Q? | A | B [| duration]",
+        "should_escape": false
+      },
+      {
         "command": "/snipeduel",
         "url": "https://example.com/slack/events",
         "description": "Challenge someone to a timed snipe duel with ELO stake",

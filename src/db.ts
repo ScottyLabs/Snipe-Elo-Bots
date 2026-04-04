@@ -75,6 +75,39 @@ function mapSnipeDuelRow(row: Record<string, unknown>): SnipeDuelRow {
   };
 }
 
+export type SlackPollRow = {
+  pollId: string;
+  guildId: string;
+  channelId: string;
+  rootMessageTs: string;
+  createdBy: string;
+  title: string;
+  options: string[];
+  createdAt: number;
+  endsAt: number | null;
+};
+
+function mapSlackPollRow(row: Record<string, unknown>): SlackPollRow {
+  let options: string[] = [];
+  try {
+    const j = JSON.parse(row.options_json as string) as unknown;
+    if (Array.isArray(j)) options = j.filter((x): x is string => typeof x === "string");
+  } catch {
+    options = [];
+  }
+  return {
+    pollId: row.poll_id as string,
+    guildId: row.guild_id as string,
+    channelId: row.channel_id as string,
+    rootMessageTs: row.root_message_ts as string,
+    createdBy: row.created_by as string,
+    title: row.title as string,
+    options,
+    createdAt: row.created_at as number,
+    endsAt: (row.ends_at as number | null) ?? null,
+  };
+}
+
 export type SnipeEventRow = {
   snipeId: string;
   guildId: string;
@@ -249,6 +282,29 @@ export class EloDb {
         expires_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_graph_sessions_expires ON graph_sessions(expires_at);
+
+      CREATE TABLE IF NOT EXISTS polls(
+        poll_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        root_message_ts TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        title TEXT NOT NULL,
+        options_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        ends_at INTEGER,
+        UNIQUE(guild_id, channel_id, root_message_ts)
+      );
+      CREATE INDEX IF NOT EXISTS idx_polls_guild_channel ON polls(guild_id, channel_id);
+
+      CREATE TABLE IF NOT EXISTS poll_votes(
+        poll_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        option_idx INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(poll_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id);
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -1277,6 +1333,73 @@ export class EloDb {
       )
       .get(guildId, sniperId, snipedId, sinceMs, untilMs) as { c: number } | undefined;
     return row?.c ?? 0;
+  }
+
+  insertPoll(args: {
+    pollId: string;
+    guildId: string;
+    channelId: string;
+    rootMessageTs: string;
+    createdBy: string;
+    title: string;
+    options: string[];
+    createdAt: number;
+    endsAt: number | null;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO polls(
+          poll_id, guild_id, channel_id, root_message_ts, created_by, title, options_json, created_at, ends_at
+        ) VALUES(?,?,?,?,?,?,?,?,?)`
+      )
+      .run(
+        args.pollId,
+        args.guildId,
+        args.channelId,
+        args.rootMessageTs,
+        args.createdBy,
+        args.title,
+        JSON.stringify(args.options),
+        args.createdAt,
+        args.endsAt
+      );
+    this.checkpoint();
+  }
+
+  /** Active poll whose root message is the thread parent (Slack `thread_ts` for replies). */
+  getActivePollByRootMessage(guildId: string, channelId: string, rootMessageTs: string, nowMs: number): SlackPollRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM polls
+         WHERE guild_id = ? AND channel_id = ? AND root_message_ts = ?
+           AND (ends_at IS NULL OR ends_at > ?)`
+      )
+      .get(guildId, channelId, rootMessageTs, nowMs) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return mapSlackPollRow(row);
+  }
+
+  /** Oldest-first numbering for `/poll list` and `/poll check N`. */
+  listActivePollsInChannel(guildId: string, channelId: string, nowMs: number): SlackPollRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM polls
+         WHERE guild_id = ? AND channel_id = ?
+           AND (ends_at IS NULL OR ends_at > ?)
+         ORDER BY created_at ASC`
+      )
+      .all(guildId, channelId, nowMs) as Record<string, unknown>[];
+    return rows.map(mapSlackPollRow);
+  }
+
+  upsertPollVote(pollId: string, userId: string, optionIdx: number, updatedAt: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO poll_votes(poll_id, user_id, option_idx, updated_at) VALUES(?,?,?,?)
+         ON CONFLICT(poll_id, user_id) DO UPDATE SET option_idx = excluded.option_idx, updated_at = excluded.updated_at`
+      )
+      .run(pollId, userId, optionIdx, updatedAt);
+    this.checkpoint();
   }
 
   purgeExpiredGraphRows(): void {

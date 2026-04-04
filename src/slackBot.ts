@@ -46,6 +46,7 @@ import { bountyRecalcSuccessEphemeral, executeSlackBountyRecalc } from "./bounty
 import { formatBountyStatusMessage } from "./bountyCommand";
 import { startSlackBountyScheduler } from "./bountySchedule";
 import { slackGraphBoltCustomRoutes } from "./graphBoltRoutes";
+import { handleSlackPollParsed, parsePollSlashText, slackPollVoteRecordedEphemeral } from "./slackPoll";
 
 function chunkSlackText(text: string, maxLen = 3500): string[] {
   const lines = text.split("\n");
@@ -264,6 +265,12 @@ function formatSlackHelpText(): string {
     `• \`${c.slashSnipeDuel}\` <@opponent> <duration> <bet> — e.g. \`${c.slashSnipeDuel} @user 7d 50\`.`,
     "• In the challenge thread, target replies with `acceptduel` or `declineduel`; challenger may `cancelduel`.",
     "• During the window, only snipes between those two count; winner takes the bet from loser, tie moves no points.",
+    "",
+    "*Polls*",
+    `• \`${c.slashPoll} list\` — numbered active polls in this channel.`,
+    `• \`${c.slashPoll} check <n>\` — get pinged in that poll’s thread.`,
+    `• \`${c.slashPoll} <question> | <opt1> | <opt2> [| …] [| duration]\` — post a poll (optional \`2h\` / \`7d\` etc. as last segment).`,
+    "• Vote by replying *in the poll’s thread* with just `1`, `2`, …",
     "",
     "*Implicit snipe rule*",
     "• In the snipe channel, a normal message counts as a snipe when it mentions at least one non-bot target",
@@ -1469,8 +1476,27 @@ export async function startSlackBot(params: {
     }
   });
 
+  app.command(config.slackOps.slashPoll, async ({ command, ack, respond, client }) => {
+    await ack();
+    if (command.channel_id !== config.slack.channelId) {
+      await wrongChannelEphemeral(respond);
+      return;
+    }
+    const parsed = parsePollSlashText(command.text);
+    await handleSlackPollParsed({
+      parsed,
+      db: params.db,
+      client,
+      guildId: SLACK_GUILD_ID,
+      channelId: command.channel_id,
+      userId: command.user_id,
+      slashPollPath: config.slackOps.slashPoll,
+      ephemeral: (t) => respond({ response_type: "ephemeral", text: t }),
+    });
+  });
+
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}, ${config.slackOps.slashAdjustBounty}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashPoll}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}, ${config.slackOps.slashAdjustBounty}`
   );
 
   const plainCmd = {
@@ -1486,12 +1512,13 @@ export async function startSlackBot(params: {
     adjust: plainSlackCmd(config.slackOps.slashAdjustElo),
     setBounty: plainSlackCmd(config.slackOps.slashSetBounty),
     adjustBounty: plainSlackCmd(config.slackOps.slashAdjustBounty),
+    poll: plainSlackCmd(config.slackOps.slashPoll),
   };
 
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainCmd.adjustBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} | ${plainCmd.poll} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainCmd.adjustBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1558,6 +1585,22 @@ export async function startSlackBot(params: {
           await postEphemeral(L.formatRemovesnipeError(msg));
         }
         return;
+      }
+
+      // Poll votes: reply in the poll thread with only the option number.
+      if (threadTs && text && /^\d+$/.test(text.trim())) {
+        const pollRow = params.db.getActivePollByRootMessage(SLACK_GUILD_ID, channelId, threadTs, Date.now());
+        if (pollRow) {
+          const choice = parseInt(text.trim(), 10);
+          if (!Number.isFinite(choice) || choice < 1 || choice > pollRow.options.length) {
+            await postEphemeral(`Pick a number from 1 to ${pollRow.options.length}.`);
+            return;
+          }
+          params.db.upsertPollVote(pollRow.pollId, userId, choice - 1, Date.now());
+          await postEphemeral(slackPollVoteRecordedEphemeral(pollRow.options[choice - 1] ?? String(choice)));
+          opsLog("slack.poll.vote", { pollId: pollRow.pollId, userId, option: choice });
+          return;
+        }
       }
 
       // Duel accept / decline / cancel in the challenge thread (plain text; always on).
@@ -1727,6 +1770,23 @@ export async function startSlackBot(params: {
             const msg = e instanceof Error ? e.message : String(e);
             await postEphemeral(slackHeadtoheadUploadErrorMessage(msg));
           }
+          return;
+        }
+
+        if (isCommandBody(lower, plainCmd.poll)) {
+          const rest = lower === plainCmd.poll ? "" : text.slice(plainCmd.poll.length + 1).trim();
+          const parsed = parsePollSlashText(rest);
+          await handleSlackPollParsed({
+            parsed,
+            db: params.db,
+            client,
+            guildId: SLACK_GUILD_ID,
+            channelId,
+            userId,
+            slashPollPath: config.slackOps.slashPoll,
+            ephemeral: postEphemeral,
+          });
+          opsLog("command.text.poll", { userId, channelId });
           return;
         }
 

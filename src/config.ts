@@ -52,6 +52,7 @@ export const config = {
     slashHelp: normalizeSlashCommand(process.env.SLACK_HELP_COMMAND, "help"),
     slashSnipeDuel: normalizeSlashCommand(process.env.SLACK_SNIPEDUEL_COMMAND, "snipeduel"),
     slashBounty: normalizeSlashCommand(process.env.SLACK_BOUNTY_COMMAND, "bounty"),
+    slashPoll: normalizeSlashCommand(process.env.SLACK_POLL_COMMAND, "poll"),
     /** Only these Slack user IDs may use `/adjustelo`. Comma-separated in `ADJUSTELO_ALLOWED_SLACK_USER_IDS`; default is a single operator. */
     adjustEloAllowedSlackUserIds: (process.env.ADJUSTELO_ALLOWED_SLACK_USER_IDS ?? "U09E6EHA5R8")
       .split(",")
