@@ -656,8 +656,8 @@ export class EloDb {
 
       const cooldownMs =
         eloEnv.snipePairCooldownMinutes > 0 ? eloEnv.snipePairCooldownMinutes * 60 * 1000 : 0;
-      /** Latest time this player appeared in any scoring pair (non-undone snipe; sniper_delta != 0). */
-      const lastScoringInvolvementAt = this.db.prepare(
+      /** Latest scoring exchange between this unordered pair (either direction; non-undone; sniper_delta != 0). */
+      const lastPairScoringAt = this.db.prepare(
         `SELECT MAX(se.created_at) AS last_at
          FROM event_pair_matches epm
          INNER JOIN snipe_events se ON se.snipe_id = epm.snipe_id
@@ -665,7 +665,10 @@ export class EloDb {
            AND se.undone_at IS NULL
            AND se.type IN ('snipe', 'makeup')
            AND epm.sniper_delta != 0
-           AND (epm.sniper_id = ? OR epm.sniped_id = ?)`
+           AND (
+             (epm.sniper_id = ? AND epm.sniped_id = ?)
+             OR (epm.sniper_id = ? AND epm.sniped_id = ?)
+           )`
       );
 
       const currentRatings = new Map(startRatings);
@@ -679,20 +682,13 @@ export class EloDb {
         const snipedBefore = currentRatings.get(snipedId)!;
 
         let cooldownSkip = false;
-        let lastAtSniper: number | null = null;
-        let lastAtSniped: number | null = null;
+        let lastAtPair: number | null = null;
         if (cooldownMs > 0) {
-          const rowS = lastScoringInvolvementAt.get(guildId, sniperId, sniperId) as
+          const rowP = lastPairScoringAt.get(guildId, sniperId, snipedId, snipedId, sniperId) as
             | { last_at: number | null }
             | undefined;
-          const rowT = lastScoringInvolvementAt.get(guildId, snipedId, snipedId) as
-            | { last_at: number | null }
-            | undefined;
-          lastAtSniper = rowS?.last_at ?? null;
-          lastAtSniped = rowT?.last_at ?? null;
-          const sniperHot = lastAtSniper != null && now - lastAtSniper < cooldownMs;
-          const snipedHot = lastAtSniped != null && now - lastAtSniped < cooldownMs;
-          cooldownSkip = sniperHot || snipedHot;
+          lastAtPair = rowP?.last_at ?? null;
+          cooldownSkip = lastAtPair != null && now - lastAtPair < cooldownMs;
         }
 
         if (cooldownSkip) {
@@ -714,10 +710,7 @@ export class EloDb {
             sniperId,
             snipedId,
             pairIdx: i,
-            msSinceSniperLastScoring:
-              lastAtSniper != null ? now - lastAtSniper : undefined,
-            msSinceSnipedLastScoring:
-              lastAtSniped != null ? now - lastAtSniped : undefined,
+            msSincePairLastScoring: lastAtPair != null ? now - lastAtPair : undefined,
           });
           continue;
         }

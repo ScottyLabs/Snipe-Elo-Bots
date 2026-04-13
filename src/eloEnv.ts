@@ -11,9 +11,9 @@ export const eloEnv = {
   kFactor: Number(process.env.ELO_K_FACTOR ?? 32),
   initialRating: Number(process.env.INITIAL_RATING ?? 1000),
   /**
-   * After a player takes part in a scoring snipe (any pair), they cannot earn ELO from another snipe
-   * until this many minutes have passed (applies to sniper and sniped roles). Multi-target snipes in one
-   * message still score each pair. 0 disables.
+   * After a scoring snipe between two players, that unordered pair cannot earn ELO from each other again
+   * until this many minutes have passed; other players may still snipe or be sniped by either side.
+   * Multi-target snipes in one message still score each pair independently. 0 disables.
    */
   snipePairCooldownMinutes: parseSnipeCooldownMinutes(),
 };
