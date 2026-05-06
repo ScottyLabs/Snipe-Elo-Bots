@@ -3,6 +3,7 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 import type { EloDb } from "./db";
+import type { GraphHttpPlatformContext } from "./graphHttpPlatformContext";
 import {
   filterDiscordGraphHumanPlayerIds,
   resolveDiscordGraphLabels,
@@ -11,6 +12,8 @@ import {
 import { collectIdsFromDirectedPairs } from "./headToHead";
 import { opsLog } from "./opsLog";
 import { SNIPES_LOG_LIMIT, buildSnipesApiPayload, collectIdsForSnipeLog } from "./snipeHistory";
+import { handleAdminCsvExportRequest } from "./adminCsvExport";
+import { handleHallOfFameRequest } from "./hallOfFameHttp";
 
 /** Top 3 by ELO among graph nodes (gold / silver / bronze in viewer). */
 function medalRanksForNodes(pairIds: string[], ratings: Map<string, number>): Map<string, 1 | 2 | 3> {
@@ -100,17 +103,7 @@ export type GraphHttpOpts = {
   discordClientRef?: { current: Client | null };
 };
 
-/** Discord or Slack: resolve labels for graph + player panel APIs. */
-export type GraphHttpPlatformContext = {
-  db: EloDb;
-  guildDisplayName: (guildId: string) => Promise<string>;
-  resolveDisplayNamesForGuild: (guildId: string, userIds: string[]) => Promise<Map<string, string>>;
-  isGuildResolvableForPlayerPanel: (guildId: string) => Promise<boolean>;
-  /** Player IDs to keep in the snipe graph (exclude bots / non-humans). */
-  filterGraphHumanPlayerIds: (guildId: string, userIds: string[]) => Promise<Set<string>>;
-  /** This app’s own bot user id(s) — always removed from the graph. */
-  getGraphExcludedSelfPlayerIds: () => Promise<Set<string>>;
-};
+export type { GraphHttpPlatformContext } from "./graphHttpPlatformContext";
 
 export async function handleGraphSiteRequest(
   req: http.IncomingMessage,
@@ -285,11 +278,17 @@ export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Se
       return;
     }
 
+    if (await handleAdminCsvExportRequest(req, res, db)) return;
+
+    if (await handleHallOfFameRequest(req, res, { ...platformCtx, getGuild })) return;
+
     await handleGraphSiteRequest(req, res, platformCtx);
   });
 
   server.listen(port, "0.0.0.0", () => {
-    console.log(`[snipe-graph] HTTP + viewer on 0.0.0.0:${port} (site /graph/)`);
+    console.log(
+      `[snipe-graph] HTTP on 0.0.0.0:${port} — graph /graph/ — hall /hof/ — admin CSV /api/admin/database.csv`
+    );
   });
 
   return server;

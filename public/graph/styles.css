@@ -245,6 +245,25 @@ button:disabled {
   padding: 0.45rem 0.75rem;
 }
 
+.hud a.secondary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Only after unlock — same as other HUD controls */
+#loginOverlay:not(.hidden) ~ .hud .hall-nav {
+  display: none;
+}
+
 .muted {
   opacity: 0.65;
   font-size: 0.8rem;

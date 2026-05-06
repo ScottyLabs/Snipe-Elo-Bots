@@ -2,6 +2,8 @@ import type { CustomRoute } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EloDb } from "./db";
+import { handleAdminCsvExportRequest } from "./adminCsvExport";
+import { handleHallOfFameRequest } from "./hallOfFameHttp";
 import { handleGraphSiteRequest, type GraphHttpPlatformContext } from "./graphHttpServer";
 import { filterSlackGraphHumanPlayerIds, resolveSlackDisplayNames } from "./slackDisplayNames";
 
@@ -77,12 +79,27 @@ export function slackGraphBoltCustomRoutes(args: {
     },
   });
 
-  const runSite = attachGraphHandler(makeCtx, handleGraphSiteRequest);
+  const runAdminHallGraph = attachGraphHandler(makeCtx, async (req, res, c) => {
+    if (await handleAdminCsvExportRequest(req, res, c.db)) return;
+    const handled = await handleHallOfFameRequest(req, res, {
+      ...c,
+      /* Slack graph has no Discord guild — archive-from-API is Discord-only; viewing cycles still works. */
+      getGuild: async () => null,
+    });
+    if (handled) return;
+    await handleGraphSiteRequest(req, res, c);
+  });
 
   return [
-    { path: "/api/graph/redeem", method: "POST", handler: runSite },
-    { path: "/api/graph/data", method: "GET", handler: runSite },
-    { path: "/api/graph/player/:playerId", method: "GET", handler: runSite },
-    { path: "/graph{/*filepath}", method: "GET", handler: runSite },
+    { path: "/api/admin/database.csv", method: "GET", handler: runAdminHallGraph },
+    { path: "/api/graph/redeem", method: "POST", handler: runAdminHallGraph },
+    { path: "/api/graph/data", method: "GET", handler: runAdminHallGraph },
+    { path: "/api/graph/player/:playerId", method: "GET", handler: runAdminHallGraph },
+    { path: "/api/hof/cycles/:cycleId", method: "GET", handler: runAdminHallGraph },
+    { path: "/api/hof/cycles", method: "GET", handler: runAdminHallGraph },
+    { path: "/api/hof/archive", method: "POST", handler: runAdminHallGraph },
+    { path: "/hof", method: "GET", handler: runAdminHallGraph },
+    { path: "/hof{/*filepath}", method: "GET", handler: runAdminHallGraph },
+    { path: "/graph{/*filepath}", method: "GET", handler: runAdminHallGraph },
   ];
 }

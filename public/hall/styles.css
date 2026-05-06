@@ -1,0 +1,191 @@
+/* Extends ../graph/styles.css — page layout only */
+
+html,
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100%;
+  height: auto;
+}
+
+.hall-footnote {
+  margin: 1rem 0 0;
+  font-size: 0.82rem;
+}
+
+.hall-footnote a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.hall-footnote a:hover {
+  text-decoration: underline;
+}
+
+.hall-header {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.hall-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hall-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text);
+  text-shadow: 0 0 18px rgba(139, 92, 246, 0.4);
+}
+
+.hall-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+}
+
+.hall-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hall-link {
+  font-size: 0.88rem;
+  color: var(--accent-blue);
+  text-decoration: none;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hall-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hall-main {
+  position: relative;
+  z-index: 5;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.25rem 2.5rem;
+}
+
+.hall-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  max-width: 36rem;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.hall-cycles {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.hall-cycle {
+  border-radius: 16px;
+  background: var(--panel-bg);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 32px rgba(59, 130, 246, 0.12), 0 0 48px rgba(139, 92, 246, 0.08);
+  padding: 1.25rem 1.35rem;
+}
+
+.hall-cycle h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  color: var(--accent-blue);
+  text-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
+}
+
+.hall-cycle-meta {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.hall-rewards {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.hall-rewards-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+  margin-bottom: 0.35rem;
+}
+
+.hall-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(129, 140, 248, 0.25);
+}
+
+.hall-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.hall-table th,
+.hall-table td {
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hall-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  color: var(--accent-purple);
+}
+
+.hall-table tr:last-child td {
+  border-bottom: none;
+}
+
+.hall-rank {
+  width: 3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hall-rank.medal-1 {
+  color: #fcd34d;
+  text-shadow: 0 0 10px rgba(252, 211, 77, 0.45);
+}
+
+.hall-rank.medal-2 {
+  color: #e5e7eb;
+}
+
+.hall-rank.medal-3 {
+  color: #fdba74;
+}
+
+.hall-rating {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-blue);
+}

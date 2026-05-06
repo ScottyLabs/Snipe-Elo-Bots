@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hall of fame — Snipe ELO</title>
+    <link rel="icon" href="../graph/logo.png" type="image/png" />
+    <link rel="stylesheet" href="../graph/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-bg" aria-hidden="true"></div>
+
+    <div id="loginOverlay" class="overlay">
+      <div class="card">
+        <div class="brand-row">
+          <img src="../graph/logo.png" alt="" width="48" height="48" onerror="this.style.display='none'" />
+          <div>
+            <h1>Hall of fame</h1>
+            <p class="muted">
+              Enter the same one-time code from <code>/snipegraph</code> (within one minute). Your session unlocks
+              archived cycles for this server.
+            </p>
+          </div>
+        </div>
+        <div class="input-row">
+          <input id="codeInput" type="text" maxlength="32" placeholder="Access code" autocomplete="one-time-code" />
+          <button type="button" id="unlockBtn">Unlock</button>
+        </div>
+        <div id="loginErr" class="err"></div>
+        <p class="muted hall-footnote">
+          <a href="../graph/">Snipe graph</a>
+          · same site &amp; login
+        </p>
+      </div>
+    </div>
+
+    <header class="hall-header">
+      <div class="hall-brand">
+        <img src="../graph/logo.png" alt="" width="40" height="40" onerror="this.style.display='none'" />
+        <div>
+          <h1 class="hall-title">Hall of fame</h1>
+          <p id="guildLine" class="muted hall-sub"></p>
+        </div>
+      </div>
+      <div class="hall-actions">
+        <a class="hall-link" href="../graph/">Snipe graph</a>
+        <button type="button" id="logoutBtn" class="secondary hidden">Lock</button>
+      </div>
+    </header>
+
+    <main id="main" class="hall-main hidden">
+      <p id="emptyHint" class="muted hall-empty hidden">No archived cycles yet. Operators can freeze the board with the archive API before a reset.</p>
+      <div id="cycles" class="hall-cycles"></div>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

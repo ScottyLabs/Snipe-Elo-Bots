@@ -137,6 +137,25 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
+/** One row in a frozen end-of-cycle leaderboard snapshot (Discord user ids + display names at archive time). */
+export type HallOfFameSnapshotRow = {
+  rank: number;
+  playerId: string;
+  displayName: string;
+  rating: number;
+};
+
+export type HallOfFameCycle = {
+  cycleId: string;
+  guildId: string;
+  title: string;
+  subtitle: string | null;
+  closedAt: number;
+  rewardsText: string | null;
+  snapshot: HallOfFameSnapshotRow[];
+  createdAt: number;
+};
+
 function mapSnipeRow(row: Record<string, unknown>): SnipeEventRow {
   return {
     snipeId: row.snipe_id as string,
@@ -158,6 +177,20 @@ export type EloDbOptions = {
   /** Rows without guild_id (pre-migration) are assigned to this tenant. Slack: SLACK_GUILD_ID; Discord: configured guild. */
   tenantIdForLegacyMigration?: string;
 };
+
+function adminCsvEscapeCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "bigint") return String(value);
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value instanceof Buffer) {
+    const b64 = value.toString("base64");
+    return `"${b64.replace(/"/g, '""')}"`;
+  }
+  const s = String(value);
+  if (/[\r\n",]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
 
 export class EloDb {
   private db: Database.Database;
@@ -305,6 +338,18 @@ export class EloDb {
         PRIMARY KEY(poll_id, user_id)
       );
       CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id);
+
+      CREATE TABLE IF NOT EXISTS hall_of_fame_cycles(
+        cycle_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        closed_at INTEGER NOT NULL,
+        rewards_text TEXT,
+        snapshot_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_hof_guild_closed ON hall_of_fame_cycles(guild_id, closed_at DESC);
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -1395,6 +1440,94 @@ export class EloDb {
     this.checkpoint();
   }
 
+  private mapHallOfFameRow(row: Record<string, unknown>): HallOfFameCycle {
+    let snapshot: HallOfFameSnapshotRow[] = [];
+    try {
+      const j = JSON.parse(row.snapshot_json as string) as unknown;
+      if (Array.isArray(j)) {
+        snapshot = j
+          .map((x) => {
+            if (!x || typeof x !== "object") return null;
+            const o = x as Record<string, unknown>;
+            const rank = Number(o.rank);
+            const rating = Number(o.rating);
+            if (!Number.isFinite(rank) || !Number.isFinite(rating)) return null;
+            const playerId = typeof o.playerId === "string" ? o.playerId : "";
+            const displayName = typeof o.displayName === "string" ? o.displayName : playerId;
+            return { rank, playerId, displayName, rating };
+          })
+          .filter((x): x is HallOfFameSnapshotRow => x !== null);
+      }
+    } catch {
+      snapshot = [];
+    }
+    return {
+      cycleId: row.cycle_id as string,
+      guildId: row.guild_id as string,
+      title: row.title as string,
+      subtitle: (row.subtitle as string | null) ?? null,
+      closedAt: row.closed_at as number,
+      rewardsText: (row.rewards_text as string | null) ?? null,
+      snapshot,
+      createdAt: row.created_at as number,
+    };
+  }
+
+  /** Append a permanent cycle record (e.g. before an ELO reset). */
+  insertHallOfFameCycle(args: {
+    guildId: string;
+    title: string;
+    subtitle?: string | null;
+    closedAt?: number;
+    rewardsText?: string | null;
+    snapshot: HallOfFameSnapshotRow[];
+  }): { cycleId: string } {
+    const cycleId = newId();
+    const now = Date.now();
+    const closedAt = args.closedAt ?? now;
+    const subtitle = args.subtitle ?? null;
+    const rewardsText = args.rewardsText ?? null;
+    const snapshotJson = JSON.stringify(args.snapshot);
+    this.db
+      .prepare(
+        `INSERT INTO hall_of_fame_cycles(cycle_id, guild_id, title, subtitle, closed_at, rewards_text, snapshot_json, created_at)
+         VALUES(?,?,?,?,?,?,?,?)`
+      )
+      .run(
+        cycleId,
+        args.guildId,
+        args.title,
+        subtitle,
+        closedAt,
+        rewardsText,
+        snapshotJson,
+        now
+      );
+    this.checkpoint();
+    return { cycleId };
+  }
+
+  listHallOfFameCycles(guildId: string): HallOfFameCycle[] {
+    const rows = this.db
+      .prepare(
+        `SELECT cycle_id, guild_id, title, subtitle, closed_at, rewards_text, snapshot_json, created_at
+         FROM hall_of_fame_cycles WHERE guild_id = ? ORDER BY closed_at DESC, created_at DESC`
+      )
+      .all(guildId) as Record<string, unknown>[];
+    return rows.map((r) => this.mapHallOfFameRow(r));
+  }
+
+  getHallOfFameCycle(guildId: string, cycleId: string): HallOfFameCycle | null {
+    const row = this.db
+      .prepare(
+        `SELECT cycle_id, guild_id, title, subtitle, closed_at, rewards_text, snapshot_json, created_at
+         FROM hall_of_fame_cycles WHERE guild_id = ? AND cycle_id = ?`
+      )
+      .get(guildId, cycleId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.mapHallOfFameRow(row);
+  }
+
   purgeExpiredGraphRows(): void {
     const now = Date.now();
     this.db.prepare(`DELETE FROM graph_passcodes WHERE expires_at < ?`).run(now);
@@ -1455,6 +1588,31 @@ export class EloDb {
       return null;
     }
     return row.guild_id;
+  }
+
+  /**
+   * Single UTF-8 CSV: one section per non-internal SQLite table. Each section starts with
+   * `# TABLE:tablename`, then a header row, then RFC 4180 data rows (for admin download only).
+   */
+  writeAdminDatabaseFlatCsv(write: (chunk: string) => void): void {
+    this.checkpoint();
+    const tableNames = this.db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' ORDER BY name`
+      )
+      .pluck()
+      .all() as string[];
+    for (const table of tableNames) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) continue;
+      write(`\n# TABLE:${table}\n`);
+      const colRows = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      const colNames = colRows.map((c) => c.name);
+      write(colNames.map(adminCsvEscapeCell).join(",") + "\n");
+      const stmt = this.db.prepare(`SELECT * FROM "${table}"`);
+      for (const row of stmt.iterate() as IterableIterator<Record<string, unknown>>) {
+        write(colNames.map((c) => adminCsvEscapeCell(row[c])).join(",") + "\n");
+      }
+    }
   }
 
   /**
