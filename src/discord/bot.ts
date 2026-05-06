@@ -20,6 +20,7 @@ import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
 import { L } from "../voice";
 import { discordConfig } from "./configDiscord";
+import { clampDiscordMessageContent } from "./discordMessageContent";
 import {
   collectIdsForSnipeConfirmation,
   formatAdjustEloConfirmation,
@@ -147,6 +148,8 @@ async function buildDiscordLeaderboardPayload(
     content = lines.join("\n");
   }
 
+  content = clampDiscordMessageContent(content);
+
   if (totalPages <= 1) {
     return { content, components: [] };
   }
@@ -170,7 +173,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
   const configuredCh = getGuildSnipeChannelId(db, guild.id);
   const snipeLane = configuredCh ? `<#${configuredCh}>` : "_not configured yet_";
   const helpPrologue = L.helpCommandPrologue("discord");
-  return [
+  const raw = [
     "**Snipe ELO — Help**",
     ...(helpPrologue ? ["", helpPrologue, ""] : [""]),
     "**Core commands**",
@@ -200,6 +203,7 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     `• In the configured lane (${snipeLane}), a normal message records a snipe when it mentions non-bot target(s)`,
     `  and ${discordConfig.snipeRequireImage ? "includes an image attachment." : "is posted (image not required in this config)."}`,
   ].join("\n");
+  return clampDiscordMessageContent(raw);
 }
 
 export type DiscordBotOptions = {
@@ -280,16 +284,18 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             .join("\n")
         : undefined;
 
-    const text = formatSnipeConfirmation({
-      kind: args.type === "makeup" ? "makeup" : "snipe",
-      sniperId: args.sniperId,
-      pairMatches: displayPairMatches,
-      playerChanges: displayPlayerChanges,
-      nameOf,
-      duelAppend,
-      bountyFirstPairIndices: result.bountyFirstPairIndices,
-      discordBountyHeading: true,
-    });
+    const text = clampDiscordMessageContent(
+      formatSnipeConfirmation({
+        kind: args.type === "makeup" ? "makeup" : "snipe",
+        sniperId: args.sniperId,
+        pairMatches: displayPairMatches,
+        playerChanges: displayPlayerChanges,
+        nameOf,
+        duelAppend,
+        bountyFirstPairIndices: result.bountyFirstPairIndices,
+        discordBountyHeading: true,
+      })
+    );
 
     const reply = await args.replyFn(text);
     db.setConfirmationMessageTs(args.guild.id, result.snipeId, reply.id);
@@ -501,7 +507,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           const text = formatDuelSettlementMessageDiscord({ duel, nameOf, db, guildId: duel.guildId });
           const channel = await guild.channels.fetch(duel.channelId).catch(() => null);
           if (channel?.isTextBased()) {
-            await channel.send({ content: text });
+            await channel.send({ content: clampDiscordMessageContent(text) });
           }
           opsLog("discord.duel.settled", {
             duelId: duel.duelId,
@@ -540,9 +546,13 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: L.leaderboardFailed(msg) }).catch(() => {});
+        await interaction
+          .editReply({ content: clampDiscordMessageContent(L.leaderboardFailed(msg)) })
+          .catch(() => {});
       } else {
-        await interaction.reply({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
+        await interaction
+          .reply({ content: clampDiscordMessageContent(L.leaderboardFailed(msg)), ephemeral: true })
+          .catch(() => {});
       }
     }
   }
@@ -564,7 +574,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           opsLog("discord.leaderboard.page", { guildId, page, userId: interaction.user.id });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          await interaction.followUp({ content: L.leaderboardFailed(msg), ephemeral: true }).catch(() => {});
+          await interaction
+            .followUp({ content: clampDiscordMessageContent(L.leaderboardFailed(msg)), ephemeral: true })
+            .catch(() => {});
         }
         return;
       }
@@ -593,7 +605,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         const snipeNames = await resolveDiscordDisplayNames(interaction.guild, snipeIds);
         const snipeNameOf = (id: string) => escapeDiscordMarkdownChunk(snipeNames.get(id) ?? id);
         const text = formatDiscordSnipesList(asSniper, asSniped, snipeNameOf(target.id), snipeNameOf);
-        await interaction.editReply({ content: text });
+        await interaction.editReply({ content: clampDiscordMessageContent(text) });
         opsLog("discord.snipes", {
           guildId: interaction.guild.id,
           targetId: target.id,
@@ -601,7 +613,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.snipesFailed(msg) });
+        await interaction.editReply({ content: clampDiscordMessageContent(L.snipesFailed(msg)) });
       }
       return;
     }
@@ -655,12 +667,12 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             channelId: chId,
           });
           if (!result.ok) {
-            await interaction.editReply({ content: result.ephemeral });
+            await interaction.editReply({ content: clampDiscordMessageContent(result.ephemeral) });
             return;
           }
           const ch = await interaction.guild.channels.fetch(chId).catch(() => null);
           if (ch?.isTextBased()) {
-            await ch.send({ content: result.channelText });
+            await ch.send({ content: clampDiscordMessageContent(result.channelText) });
           }
           await interaction.editReply({ content: bountyRecalcSuccessEphemeral(result.claimsCleared) });
           opsLog("discord.bounty.recalc", {
@@ -671,7 +683,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          await interaction.editReply({ content: `Bounty recalc failed: ${msg}` }).catch(() => {});
+          await interaction
+            .editReply({ content: clampDiscordMessageContent(`Bounty recalc failed: ${msg}`) })
+            .catch(() => {});
         }
         return;
       }
@@ -692,11 +706,15 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           guildId,
           nameOf: bountyNameOf,
         });
-        await interaction.editReply({ content: text });
+        await interaction.editReply({ content: clampDiscordMessageContent(text) });
         opsLog("discord.bounty", { guildId, userId: interaction.user.id });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: `Couldn't read the bounty ledger: ${msg}` }).catch(() => {});
+        await interaction
+          .editReply({
+            content: clampDiscordMessageContent(`Couldn't read the bounty ledger: ${msg}`),
+          })
+          .catch(() => {});
       }
       return;
     }
@@ -737,7 +755,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         opsLog("discord.headtohead", { guildId: interaction.guild!.id, userId: interaction.user.id });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.headtoheadFailed(msg) });
+        await interaction.editReply({ content: clampDiscordMessageContent(L.headtoheadFailed(msg)) });
       }
       return;
     }
@@ -789,17 +807,19 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         const undoNames = await resolveDiscordDisplayNames(interaction.guild, undoIds);
         const undoNameOf = (id: string) => escapeDiscordMarkdownChunk(undoNames.get(id) ?? id);
         await interaction.editReply({
-          content: formatUndoConfirmation({
-            kind: "undo",
-            undoingSnipeId: snipe.snipeId,
-            playerChanges: undoResult.playerChanges,
-            nameOf: undoNameOf,
-          }),
+          content: clampDiscordMessageContent(
+            formatUndoConfirmation({
+              kind: "undo",
+              undoingSnipeId: snipe.snipeId,
+              playerChanges: undoResult.playerChanges,
+              nameOf: undoNameOf,
+            })
+          ),
         });
         opsLog("discord.removesnipe.ok", { undoesSnipeId: snipe.snipeId });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.formatRemovesnipeError(msg) });
+        await interaction.editReply({ content: clampDiscordMessageContent(L.formatRemovesnipeError(msg)) });
       }
       return;
     }
@@ -849,11 +869,14 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           sniperId: sniper.id,
           snipedIds,
           reactSource: false,
-          replyFn: (content) => interaction.editReply({ content }),
+          replyFn: (content) =>
+            interaction.editReply({ content: clampDiscordMessageContent(content) }),
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.makeupCommandFailed("/makeupsnipe", msg) });
+        await interaction.editReply({
+          content: clampDiscordMessageContent(L.makeupCommandFailed("/makeupsnipe", msg)),
+        });
       }
       return;
     }
@@ -904,7 +927,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           durationLabel,
           betPoints: bet,
         });
-        const duelMsg = await ch.send({ content: body });
+        const duelMsg = await ch.send({ content: clampDiscordMessageContent(body) });
         await duelMsg.startThread({
           name: `Duel — ${interaction.user.username} vs ${opponent.username}`.slice(0, 100),
           autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
@@ -927,7 +950,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.snipeDuelFailed(msg) });
+        await interaction.editReply({ content: clampDiscordMessageContent(L.snipeDuelFailed(msg)) });
       }
       return;
     }
@@ -998,7 +1021,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         if (truncated) {
           content += "\n\n" + L.setBountyTooManyDropped(bountyEnv.topN);
         }
-        await interaction.editReply({ content });
+        await interaction.editReply({ content: clampDiscordMessageContent(content) });
         opsLog("discord.setbounty.ok", {
           guildId: interaction.guild.id,
           actorId: interaction.user.id,
@@ -1016,7 +1039,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           return;
         }
         await interaction.editReply({
-          content: L.setBountyFailed("/setbounty", msg),
+          content: clampDiscordMessageContent(L.setBountyFailed("/setbounty", msg)),
         });
       }
       return;
@@ -1172,7 +1195,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             if (truncated) {
               contentA += "\n\n" + L.setBountyTooManyDropped(bountyEnv.topN);
             }
-            await interaction.editReply({ content: contentA });
+            await interaction.editReply({ content: clampDiscordMessageContent(contentA) });
             opsLog("discord.adjustbounty.add", {
               guildId: guildIdAb,
               actorId: interaction.user.id,
@@ -1194,7 +1217,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
               await interaction.editReply({ content: L.adjustBountyNoNewMarks() });
               return;
             }
-            await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgAdd) });
+            await interaction.editReply({
+              content: clampDiscordMessageContent(L.adjustBountyFailed("/adjustbounty", msgAdd)),
+            });
           }
           return;
         }
@@ -1234,7 +1259,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                 "\n\n" +
                 L.setBountyOperatorFooter("discord");
             }
-            await interaction.editReply({ content: contentRm });
+            await interaction.editReply({ content: clampDiscordMessageContent(contentRm) });
             opsLog("discord.adjustbounty.remove", {
               guildId: guildIdAb,
               actorId: interaction.user.id,
@@ -1260,13 +1285,17 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
               await interaction.editReply({ content: L.adjustBountyRemoveNoneOnList() });
               return;
             }
-            await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgRm) });
+            await interaction.editReply({
+              content: clampDiscordMessageContent(L.adjustBountyFailed("/adjustbounty", msgRm)),
+            });
           }
           return;
         }
       } catch (e) {
         const msgAb = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.adjustBountyFailed("/adjustbounty", msgAb) });
+        await interaction.editReply({
+          content: clampDiscordMessageContent(L.adjustBountyFailed("/adjustbounty", msgAb)),
+        });
       }
       return;
     }
@@ -1303,18 +1332,22 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         const adjNames = await resolveDiscordDisplayNames(interaction.guild, [change.playerId]);
         const adjNameOf = (id: string) => escapeDiscordMarkdownChunk(adjNames.get(id) ?? id);
         await interaction.editReply({
-          content: formatAdjustEloConfirmation({
-            playerId: change.playerId,
-            beforeRating: change.beforeRating,
-            afterRating: change.afterRating,
-            delta: change.delta,
-            nameOf: adjNameOf,
-          }),
+          content: clampDiscordMessageContent(
+            formatAdjustEloConfirmation({
+              playerId: change.playerId,
+              beforeRating: change.beforeRating,
+              afterRating: change.afterRating,
+              delta: change.delta,
+              nameOf: adjNameOf,
+            })
+          ),
         });
         opsLog("discord.adjustelo.ok", { guildId: interaction.guild.id, playerId: target.id, delta });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: L.adjustCommandFailed("/adjustelo", msg) });
+        await interaction.editReply({
+          content: clampDiscordMessageContent(L.adjustCommandFailed("/adjustelo", msg)),
+        });
       }
     }
   });
@@ -1343,7 +1376,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                 opsLog("discord.duel.cancel", { duelId: duel.duelId, userId: message.author.id });
               } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
-                await message.reply({ content: L.snipeDuelFailed(msg) });
+                await message.reply({ content: clampDiscordMessageContent(L.snipeDuelFailed(msg)) });
               }
               return;
             }
@@ -1364,7 +1397,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                   opsLog("discord.duel.accept", { duelId: duel.duelId, userId: message.author.id });
                 } catch (e) {
                   const msg = e instanceof Error ? e.message : String(e);
-                  await message.reply({ content: L.snipeDuelFailed(msg) });
+                  await message.reply({ content: clampDiscordMessageContent(L.snipeDuelFailed(msg)) });
                 }
                 return;
               }
@@ -1375,7 +1408,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                   opsLog("discord.duel.decline", { duelId: duel.duelId, userId: message.author.id });
                 } catch (e) {
                   const msg = e instanceof Error ? e.message : String(e);
-                  await message.reply({ content: L.snipeDuelFailed(msg) });
+                  await message.reply({ content: clampDiscordMessageContent(L.snipeDuelFailed(msg)) });
                 }
                 return;
               }
@@ -1422,7 +1455,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         snipedIds: humanSniped,
         reactSource: true,
         sourceMessage: message,
-        replyFn: (content) => message.reply({ content }),
+        replyFn: (content) => message.reply({ content: clampDiscordMessageContent(content) }),
       });
     } catch (e) {
       console.error("[snipe-elo-discord] messageCreate error:", e);

@@ -1,4 +1,5 @@
 import type { Client } from "discord.js";
+import { clampDiscordMessageContent } from "./discord/discordMessageContent";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel, timeHourMinuteInTimeZone } from "./bounty";
 import { bountyEnv } from "./bountyEnv";
 import type { EloDb } from "./db";
@@ -120,7 +121,7 @@ async function announceDiscordBountyForGuild(
     escapeDiscordMarkdownChunk(nameMap.get(id) ?? id)
   );
   const text = L.bountyDailyAnnouncementDiscord({ dateLabel, rankedLines });
-  await ch.send({ content: text });
+  await ch.send({ content: clampDiscordMessageContent(text) });
   opsLog("bounty.announced", { platform: "discord", guildId, dateKey, count: targetIds.length });
 }
 
