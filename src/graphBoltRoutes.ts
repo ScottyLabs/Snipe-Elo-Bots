@@ -85,8 +85,8 @@ export function slackGraphBoltCustomRoutes(args: {
     if (await handleAdminCsvExportRequest(req, res, c.db)) return;
     const handled = await handleHallOfFameRequest(req, res, {
       ...c,
-      /* Slack graph has no Discord guild — archive-from-API is Discord-only; viewing cycles still works. */
       getGuild: async () => null,
+      getSlackArchiveClient: () => args.getClient(),
     });
     if (handled) return;
     await handleGraphSiteRequest(req, res, c);

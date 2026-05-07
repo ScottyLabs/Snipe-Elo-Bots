@@ -2,10 +2,12 @@ import type { Guild } from "discord.js";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import type { EloDb, HallOfFameSnapshotRow } from "./db";
+import type { EloDb, HallOfFameSnapshotRow, PlayerRating } from "./db";
 import { takeDiscordHumanLeaderboardPaged } from "./discordDisplayNames";
 import type { GraphHttpPlatformContext } from "./graphHttpPlatformContext";
 import { opsLog } from "./opsLog";
+import { takeSlackHumanLeaderboardPaged, type SlackInfoClient } from "./slackDisplayNames";
+import { SLACK_GUILD_ID } from "./tenants";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +49,8 @@ function bearerToken(req: http.IncomingMessage): string | null {
 
 export type HallOfFameHttpContext = GraphHttpPlatformContext & {
   getGuild: (guildId: string) => Promise<Guild | null>;
+  /** Slack bot only: used to archive `__slack__` without a Discord `Guild`. */
+  getSlackArchiveClient?: () => SlackInfoClient | null;
 };
 
 function clampInt(n: unknown, lo: number, hi: number, fallback: number): number {
@@ -161,7 +165,10 @@ export async function handleHallOfFameRequest(
       try {
         j = JSON.parse(raw) as Record<string, unknown>;
       } catch {
-        json(res, 400, { error: "invalid_json" });
+        json(res, 400, {
+          error: "invalid_json",
+          hint: 'Body must be valid JSON. Use only straight ASCII double-quote characters ("), not typographic quotes from Slack/Word.',
+        });
         return true;
       }
       const guildId = typeof j.guildId === "string" ? j.guildId.trim() : "";
@@ -187,15 +194,32 @@ export async function handleHallOfFameRequest(
           : Date.now();
       const defaultTop = Number(process.env.HALL_OF_FAME_SNAPSHOT_TOP ?? 100);
       const topN = clampInt(j.topN, 1, 500, defaultTop);
-
-      const guild = await getGuild(guildId);
-      if (!guild) {
-        json(res, 400, { error: "guild_unavailable" });
-        return true;
-      }
-
       const sorted = db.getAllPlayersSorted(guildId);
-      const { allHumans, nameMap } = await takeDiscordHumanLeaderboardPaged(guild, sorted, topN);
+
+      let allHumans: PlayerRating[];
+      let nameMap: Map<string, string>;
+      if (guildId === SLACK_GUILD_ID) {
+        const slackClient = ctx.getSlackArchiveClient?.() ?? null;
+        if (!slackClient) {
+          json(res, 400, {
+            error: "guild_unavailable",
+            hint: "Slack tenant archive requires the Slack bot HTTP handler (Slack API client).",
+          });
+          return true;
+        }
+        const r = await takeSlackHumanLeaderboardPaged(slackClient, sorted, topN);
+        allHumans = r.allHumans;
+        nameMap = r.displayNames;
+      } else {
+        const guild = await getGuild(guildId);
+        if (!guild) {
+          json(res, 400, { error: "guild_unavailable" });
+          return true;
+        }
+        const r = await takeDiscordHumanLeaderboardPaged(guild, sorted, topN);
+        allHumans = r.allHumans;
+        nameMap = r.nameMap;
+      }
       const snapshot: HallOfFameSnapshotRow[] = allHumans.map((pl, i) => ({
         rank: i + 1,
         playerId: pl.playerId,

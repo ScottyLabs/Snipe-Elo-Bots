@@ -31,9 +31,25 @@ function main(): void {
   fs.mkdirSync(processedDir, { recursive: true });
   fs.mkdirSync(failedDir, { recursive: true });
 
-  const dbPath = path.resolve(cwd, process.env.DISCORD_DB_PATH ?? "./snipe-elo-discord.sqlite3");
+  const rawDb = process.env.DISCORD_DB_PATH ?? "./snipe-elo-discord.sqlite3";
+  const dbPath = path.resolve(cwd, rawDb);
   const tenant = process.env.DISCORD_GUILD_ID?.trim() || "__discord__";
-  const db = new EloDb(dbPath, { tenantIdForLegacyMigration: tenant });
+
+  let db: EloDb;
+  try {
+    db = new EloDb(dbPath, { tenantIdForLegacyMigration: tenant });
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err?.code === "ENOENT") {
+      console.error(`[hof:import] Cannot open database at:\n  ${dbPath}`);
+      console.error(
+        "  DISCORD_DB_PATH must be a real .sqlite3 file (Slack: same as DB_PATH, often ./snipe-elo.sqlite3)."
+      );
+      console.error('  Do not use documentation placeholders like "/path/to/your/…".');
+      process.exit(1);
+    }
+    throw e;
+  }
 
   const files = fs
     .readdirSync(inboxDir)
