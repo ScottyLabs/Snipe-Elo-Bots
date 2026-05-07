@@ -50,7 +50,12 @@
     </header>
 
     <main id="main" class="hall-main hidden">
-      <p id="emptyHint" class="muted hall-empty hidden">No archived cycles yet. Operators can freeze the board with the archive API before a reset.</p>
+      <p id="emptyHint" class="muted hall-empty hidden">
+        No archived cycles for this server yet. Operators can add one with
+        <code>POST /api/hof/archive</code> (freeze live board) or import an admin export CSV via
+        <code>npm run hof:import</code> (see <code>hall-of-fame-inbox/FORMAT.txt</code>)—both must target the
+        same database this site reads.
+      </p>
       <div id="cycles" class="hall-cycles"></div>
     </main>
 
