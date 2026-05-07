@@ -1,25 +1,4 @@
 /* global fetch */
-const TOKEN_KEY = "snipeGraphToken";
-
-/** Same storage as /graph/ so Hall opens in a new tab after redeeming on the graph. */
-function graphTokenGet() {
-  const fromLs = localStorage.getItem(TOKEN_KEY);
-  if (fromLs) return fromLs;
-  const fromSs = sessionStorage.getItem(TOKEN_KEY);
-  if (fromSs) {
-    localStorage.setItem(TOKEN_KEY, fromSs);
-    sessionStorage.removeItem(TOKEN_KEY);
-  }
-  return fromSs;
-}
-function graphTokenSet(token) {
-  localStorage.setItem(TOKEN_KEY, token);
-  sessionStorage.removeItem(TOKEN_KEY);
-}
-function graphTokenClear() {
-  localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
-}
 
 function escHtml(s) {
   return String(s)
@@ -112,8 +91,8 @@ function renderCycle(c) {
   );
 }
 
-async function loadCycles(token) {
-  const data = await fetchJson("/api/hof/cycles", { headers: { Authorization: "Bearer " + token } });
+async function loadCycles() {
+  const data = await fetchJson("/api/hof/cycles");
   const cycles = data.cycles || [];
   var gn = typeof data.guildName === "string" && data.guildName ? data.guildName : "this server";
   document.getElementById("guildLine").textContent =
@@ -132,60 +111,8 @@ async function loadCycles(token) {
   document.getElementById("main").classList.remove("hidden");
 }
 
-async function redeem() {
-  const code = document.getElementById("codeInput").value.trim();
-  const err = document.getElementById("loginErr");
-  err.textContent = "";
-  if (!code) {
-    err.textContent = "Enter a code.";
-    return;
-  }
-  const btn = document.getElementById("unlockBtn");
-  btn.disabled = true;
-  try {
-    const out = await fetchJson("/api/graph/redeem", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    graphTokenSet(out.token);
-    document.getElementById("loginOverlay").classList.add("hidden");
-    document.getElementById("logoutBtn").classList.remove("hidden");
-    await loadCycles(out.token);
-  } catch (e) {
-    err.textContent =
-      e.message === "invalid_or_expired_code" ? "Invalid or expired code." : e.message || "Failed.";
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function logout() {
-  graphTokenClear();
-  document.getElementById("loginOverlay").classList.remove("hidden");
-  document.getElementById("logoutBtn").classList.add("hidden");
-  document.getElementById("main").classList.add("hidden");
-  document.getElementById("cycles").innerHTML = "";
-  document.getElementById("emptyHint").classList.add("hidden");
-}
-
 async function boot() {
-  document.getElementById("unlockBtn").addEventListener("click", redeem);
-  document.getElementById("codeInput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") redeem();
-  });
-  document.getElementById("logoutBtn").addEventListener("click", logout);
-  const existing = graphTokenGet();
-  if (existing) {
-    try {
-      await fetchJson("/api/hof/cycles", { headers: { Authorization: "Bearer " + existing } });
-      document.getElementById("loginOverlay").classList.add("hidden");
-      document.getElementById("logoutBtn").classList.remove("hidden");
-      await loadCycles(existing);
-    } catch (_e) {
-      graphTokenClear();
-    }
-  }
+  await loadCycles();
 }
 
 boot();

@@ -1,25 +1,4 @@
 /* global vis */
-const TOKEN_KEY = "snipeGraphToken";
-
-/** Shared across tabs until server session expires (see GRAPH_VIEW_SESSION_MS). */
-function graphTokenGet() {
-  const fromLs = localStorage.getItem(TOKEN_KEY);
-  if (fromLs) return fromLs;
-  const fromSs = sessionStorage.getItem(TOKEN_KEY);
-  if (fromSs) {
-    localStorage.setItem(TOKEN_KEY, fromSs);
-    sessionStorage.removeItem(TOKEN_KEY);
-  }
-  return fromSs;
-}
-function graphTokenSet(token) {
-  localStorage.setItem(TOKEN_KEY, token);
-  sessionStorage.removeItem(TOKEN_KEY);
-}
-function graphTokenClear() {
-  localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
-}
 
 /**
  * Focal node plus anyone with a direct snipe edge to/from them (either direction).
@@ -395,11 +374,8 @@ function renderPanel(data) {
 async function onNodeClick(params) {
   if (params.nodes.length !== 1) return;
   const id = params.nodes[0];
-  const token = graphTokenGet();
   try {
-    const data = await fetchJson("/api/graph/player/" + encodeURIComponent(id), {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const data = await fetchJson("/api/graph/player/" + encodeURIComponent(id));
     renderPanel(data);
     applyGraphSubset(id);
     document.getElementById("resetViewBtn").classList.remove("hidden");
@@ -411,8 +387,7 @@ async function onNodeClick(params) {
 }
 
 async function loadGraph() {
-  const token = graphTokenGet();
-  const data = await fetchJson("/api/graph/data", { headers: { Authorization: "Bearer " + token } });
+  const data = await fetchJson("/api/graph/data");
   guildName = data.guildName || "Server";
   fullNodes = data.nodes || [];
   fullEdges = data.edges || [];
@@ -454,72 +429,9 @@ async function loadGraph() {
   applySearchDimming();
 }
 
-async function redeem() {
-  const code = document.getElementById("codeInput").value.trim();
-  const err = document.getElementById("loginErr");
-  err.textContent = "";
-  if (!code) {
-    err.textContent = "Enter a code.";
-    return;
-  }
-  const btn = document.getElementById("unlockBtn");
-  btn.disabled = true;
-  try {
-    const out = await fetchJson("/api/graph/redeem", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    graphTokenSet(out.token);
-    document.getElementById("loginOverlay").classList.add("hidden");
-    document.getElementById("logoutBtn").classList.remove("hidden");
-    await loadGraph();
-  } catch (e) {
-    err.textContent =
-      e.message === "invalid_or_expired_code" ? "Invalid or expired code." : e.message || "Failed.";
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function logout() {
-  graphTokenClear();
-  if (network) {
-    network.destroy();
-    network = null;
-  }
-  fullNodes = [];
-  fullEdges = [];
-  fullNodeRankById = new Map();
-  fullNodeRankCount = 0;
-  document.getElementById("loginOverlay").classList.remove("hidden");
-  document.getElementById("logoutBtn").classList.add("hidden");
-  document.getElementById("resetViewBtn").classList.add("hidden");
-  document.getElementById("panel").classList.add("hidden");
-  const sw = document.getElementById("graphSearchWrap");
-  if (sw) sw.classList.add("hidden");
-  const gs = document.getElementById("graphSearch");
-  if (gs) gs.value = "";
-}
-
 async function boot() {
-  document.getElementById("unlockBtn").addEventListener("click", redeem);
-  document.getElementById("codeInput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") redeem();
-  });
-  document.getElementById("logoutBtn").addEventListener("click", logout);
   document.getElementById("resetViewBtn").addEventListener("click", showFullGraph);
-  const existing = graphTokenGet();
-  if (existing) {
-    try {
-      await fetchJson("/api/graph/data", { headers: { Authorization: "Bearer " + existing } });
-      document.getElementById("loginOverlay").classList.add("hidden");
-      document.getElementById("logoutBtn").classList.remove("hidden");
-      await loadGraph();
-    } catch (_e) {
-      graphTokenClear();
-    }
-  }
+  await loadGraph();
 }
 
 boot();

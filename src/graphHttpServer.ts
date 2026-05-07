@@ -15,6 +15,7 @@ import { SNIPES_LOG_LIMIT, buildSnipesApiPayload, collectIdsForSnipeLog } from "
 import { handleAdminCsvExportRequest } from "./adminCsvExport";
 import { handleAdminDatabaseMutationRequests } from "./adminDatabaseMutationsHttp";
 import { handleHallOfFameRequest } from "./hallOfFameHttp";
+import { SLACK_GUILD_ID } from "./tenants";
 
 /** Top 3 by ELO among graph nodes (gold / silver / bronze in viewer). */
 function medalRanksForNodes(pairIds: string[], ratings: Map<string, number>): Map<string, 1 | 2 | 3> {
@@ -67,6 +68,17 @@ function bearerToken(req: http.IncomingMessage): string | null {
   const h = req.headers.authorization;
   if (!h || !h.startsWith("Bearer ")) return null;
   return h.slice(7).trim() || null;
+}
+
+function resolvePublicGuildId(db: EloDb, url: URL): string | null {
+  const explicit = url.searchParams.get("guildId")?.trim();
+  if (explicit) return explicit;
+  const preferred = process.env.PUBLIC_GRAPH_GUILD_ID?.trim() || process.env.DISCORD_GUILD_ID?.trim();
+  if (preferred) return preferred;
+  const guildIds = db.listGuildIdsWithPlayerRows();
+  if (guildIds.length === 1) return guildIds[0];
+  if (guildIds.includes(SLACK_GUILD_ID)) return SLACK_GUILD_ID;
+  return guildIds[0] ?? null;
 }
 
 /** Undirected reachability from focus (weakly connected component as a set of nodes). */
@@ -180,7 +192,7 @@ export async function handleGraphSiteRequest(
     }
 
     const token = bearerToken(req);
-    const guildId = token ? db.validateGraphSession(token) : null;
+    const guildId = token ? db.validateGraphSession(token) : resolvePublicGuildId(db, url);
 
     if (req.method === "GET" && p === "/api/graph/data") {
       if (!guildId) {

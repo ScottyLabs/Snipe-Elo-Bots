@@ -102,6 +102,7 @@ export function slackGraphBoltCustomRoutes(args: {
     { path: "/api/hof/cycles/:cycleId", method: "GET", handler: runAdminHallGraph },
     { path: "/api/hof/cycles", method: "GET", handler: runAdminHallGraph },
     { path: "/api/hof/archive", method: "POST", handler: runAdminHallGraph },
+    { path: "/api/hof/undo-latest", method: "POST", handler: runAdminHallGraph },
     { path: "/hof", method: "GET", handler: runAdminHallGraph },
     { path: "/hof{/*filepath}", method: "GET", handler: runAdminHallGraph },
     { path: "/graph{/*filepath}", method: "GET", handler: runAdminHallGraph },

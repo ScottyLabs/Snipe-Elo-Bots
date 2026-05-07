@@ -11,30 +11,6 @@
   <body>
     <div class="page-bg" aria-hidden="true"></div>
 
-    <div id="loginOverlay" class="overlay">
-      <div class="card">
-        <div class="brand-row">
-          <img src="../graph/logo.png" alt="" width="48" height="48" onerror="this.style.display='none'" />
-          <div>
-            <h1>Hall of fame</h1>
-            <p class="muted">
-              Enter the same one-time code from <code>/snipegraph</code> (within one minute). Your session unlocks
-              archived cycles for this server.
-            </p>
-          </div>
-        </div>
-        <div class="input-row">
-          <input id="codeInput" type="text" maxlength="32" placeholder="Access code" autocomplete="one-time-code" />
-          <button type="button" id="unlockBtn">Unlock</button>
-        </div>
-        <div id="loginErr" class="err"></div>
-        <p class="muted hall-footnote">
-          <a href="../graph/">Snipe graph</a>
-          · same site &amp; login
-        </p>
-      </div>
-    </div>
-
     <header class="hall-header">
       <div class="hall-brand">
         <img src="../graph/logo.png" alt="" width="40" height="40" onerror="this.style.display='none'" />
@@ -45,7 +21,6 @@
       </div>
       <div class="hall-actions">
         <a class="hall-link" href="../graph/">Snipe graph</a>
-        <button type="button" id="logoutBtn" class="secondary hidden">Lock</button>
       </div>
     </header>
 

@@ -47,6 +47,17 @@ function bearerToken(req: http.IncomingMessage): string | null {
   return h.slice(7).trim() || null;
 }
 
+function resolvePublicGuildId(db: EloDb, url: URL): string | null {
+  const explicit = url.searchParams.get("guildId")?.trim();
+  if (explicit) return explicit;
+  const preferred = process.env.PUBLIC_GRAPH_GUILD_ID?.trim() || process.env.DISCORD_GUILD_ID?.trim();
+  if (preferred) return preferred;
+  const guildIds = db.listGuildIdsWithPlayerRows();
+  if (guildIds.length === 1) return guildIds[0];
+  if (guildIds.includes(SLACK_GUILD_ID)) return SLACK_GUILD_ID;
+  return guildIds[0] ?? null;
+}
+
 export type HallOfFameHttpContext = GraphHttpPlatformContext & {
   getGuild: (guildId: string) => Promise<Guild | null>;
   /** Slack bot only: used to archive `__slack__` without a Discord `Guild`. */
@@ -121,7 +132,7 @@ export async function handleHallOfFameRequest(
     const graphToken = bearerToken(req);
 
     if (req.method === "GET" && p === "/api/hof/cycles") {
-      const guildId = graphToken ? db.validateGraphSession(graphToken) : null;
+      const guildId = graphToken ? db.validateGraphSession(graphToken) : resolvePublicGuildId(db, url);
       if (!guildId) {
         json(res, 401, { error: "unauthorized" });
         return true;
@@ -134,7 +145,7 @@ export async function handleHallOfFameRequest(
 
     const oneCycleMatch = /^\/api\/hof\/cycles\/([^/]+)$/.exec(p);
     if (req.method === "GET" && oneCycleMatch) {
-      const guildId = graphToken ? db.validateGraphSession(graphToken) : null;
+      const guildId = graphToken ? db.validateGraphSession(graphToken) : resolvePublicGuildId(db, url);
       if (!guildId) {
         json(res, 401, { error: "unauthorized" });
         return true;
@@ -237,6 +248,47 @@ export async function handleHallOfFameRequest(
       });
       opsLog("hof.archived", { cycleId, guildId, rows: snapshot.length });
       json(res, 200, { cycleId, guildId, snapshotCount: snapshot.length });
+      return true;
+    }
+
+    if (req.method === "POST" && p === "/api/hof/undo-latest") {
+      const adminTok = process.env.HALL_OF_FAME_ARCHIVE_TOKEN?.trim();
+      if (!adminTok) {
+        json(res, 503, { error: "archive_not_configured" });
+        return true;
+      }
+      const auth = bearerToken(req);
+      if (!auth || auth !== adminTok) {
+        json(res, 401, { error: "unauthorized" });
+        return true;
+      }
+      const raw = await readBody(req);
+      let j: Record<string, unknown> = {};
+      try {
+        j = JSON.parse(raw || "{}") as Record<string, unknown>;
+      } catch {
+        json(res, 400, {
+          error: "invalid_json",
+          hint: 'Body must be valid JSON. Use only straight ASCII double-quote characters ("), not typographic quotes from Slack/Word.',
+        });
+        return true;
+      }
+      const guildId = typeof j.guildId === "string" ? j.guildId.trim() : "";
+      if (!guildId) {
+        json(res, 400, { error: "guild_id_required" });
+        return true;
+      }
+      const out = db.deleteLatestHallOfFameCycle(guildId);
+      if (!out.deleted) {
+        json(res, 200, { deleted: false, guildId });
+        return true;
+      }
+      json(res, 200, {
+        deleted: true,
+        guildId,
+        cycleId: out.cycleId,
+        title: out.title ?? null,
+      });
       return true;
     }
 

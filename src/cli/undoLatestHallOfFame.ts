@@ -5,6 +5,12 @@
  *
  *   DISCORD_DB_PATH=./snipe-elo.sqlite3 DISCORD_GUILD_ID=__slack__ npm run hof:undo-latest
  *   DISCORD_DB_PATH=./snipe-elo-discord.sqlite3 DISCORD_GUILD_ID=<snowflake> npm run hof:undo-latest
+ *
+ * On production, the SQLite file on your laptop may not match Railway. Same auth as archive:
+ *   curl -sS -X POST "https://YOUR-SLACK-BOT/api/hof/undo-latest" \
+ *     -H "Authorization: Bearer $HALL_OF_FAME_ARCHIVE_TOKEN" \
+ *     -H "Content-Type: application/json" \
+ *     -d '{"guildId":"__slack__"}'
  */
 import fs from "fs";
 import path from "path";
