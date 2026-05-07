@@ -1,6 +1,26 @@
 /* global vis */
 const TOKEN_KEY = "snipeGraphToken";
 
+/** Shared across tabs until server session expires (see GRAPH_VIEW_SESSION_MS). */
+function graphTokenGet() {
+  const fromLs = localStorage.getItem(TOKEN_KEY);
+  if (fromLs) return fromLs;
+  const fromSs = sessionStorage.getItem(TOKEN_KEY);
+  if (fromSs) {
+    localStorage.setItem(TOKEN_KEY, fromSs);
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+  return fromSs;
+}
+function graphTokenSet(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+function graphTokenClear() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
 /**
  * Focal node plus anyone with a direct snipe edge to/from them (either direction).
  * Other players are hidden when a node is selected.
@@ -375,7 +395,7 @@ function renderPanel(data) {
 async function onNodeClick(params) {
   if (params.nodes.length !== 1) return;
   const id = params.nodes[0];
-  const token = sessionStorage.getItem(TOKEN_KEY);
+  const token = graphTokenGet();
   try {
     const data = await fetchJson("/api/graph/player/" + encodeURIComponent(id), {
       headers: { Authorization: "Bearer " + token },
@@ -391,7 +411,7 @@ async function onNodeClick(params) {
 }
 
 async function loadGraph() {
-  const token = sessionStorage.getItem(TOKEN_KEY);
+  const token = graphTokenGet();
   const data = await fetchJson("/api/graph/data", { headers: { Authorization: "Bearer " + token } });
   guildName = data.guildName || "Server";
   fullNodes = data.nodes || [];
@@ -450,7 +470,7 @@ async function redeem() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
     });
-    sessionStorage.setItem(TOKEN_KEY, out.token);
+    graphTokenSet(out.token);
     document.getElementById("loginOverlay").classList.add("hidden");
     document.getElementById("logoutBtn").classList.remove("hidden");
     await loadGraph();
@@ -463,7 +483,7 @@ async function redeem() {
 }
 
 function logout() {
-  sessionStorage.removeItem(TOKEN_KEY);
+  graphTokenClear();
   if (network) {
     network.destroy();
     network = null;
@@ -489,7 +509,7 @@ async function boot() {
   });
   document.getElementById("logoutBtn").addEventListener("click", logout);
   document.getElementById("resetViewBtn").addEventListener("click", showFullGraph);
-  const existing = sessionStorage.getItem(TOKEN_KEY);
+  const existing = graphTokenGet();
   if (existing) {
     try {
       await fetchJson("/api/graph/data", { headers: { Authorization: "Bearer " + existing } });
@@ -497,7 +517,7 @@ async function boot() {
       document.getElementById("logoutBtn").classList.remove("hidden");
       await loadGraph();
     } catch (_e) {
-      sessionStorage.removeItem(TOKEN_KEY);
+      graphTokenClear();
     }
   }
 }

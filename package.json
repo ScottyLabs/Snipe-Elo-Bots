@@ -7,6 +7,10 @@
     "dev": "ts-node src/index.ts",
     "dev:discord": "ts-node src/indexDiscord.ts",
     "build": "tsc -p tsconfig.json",
+    "gen:admin-token": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    "hof:import": "node dist/cli/importHallOfFameInbox.js",
+    "admin:reset": "node dist/cli/adminResetSeason.js",
+    "admin:import": "node dist/cli/adminDatabaseImport.js",
     "start": "node dist/index.js",
     "start:discord": "node dist/indexDiscord.js"
   },

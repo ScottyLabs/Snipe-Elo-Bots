@@ -18,9 +18,16 @@ function jsonError(res: http.ServerResponse, status: number, body: Record<string
   res.end(s);
 }
 
+/** Prefer `ADMIN_CSV_EXPORT_TOKEN`; otherwise reuse `HALL_OF_FAME_ARCHIVE_TOKEN` so one secret can cover admin tools. */
+export function resolveAdminCsvExportToken(): string {
+  return (
+    process.env.ADMIN_CSV_EXPORT_TOKEN?.trim() || process.env.HALL_OF_FAME_ARCHIVE_TOKEN?.trim() || ""
+  );
+}
+
 /**
  * GET `/api/admin/database.csv` — full SQLite export as one CSV (section per table).
- * `Authorization: Bearer <ADMIN_CSV_EXPORT_TOKEN>` (set `ADMIN_CSV_EXPORT_TOKEN` in env).
+ * `Authorization: Bearer <ADMIN_CSV_EXPORT_TOKEN>` or the same bearer as `HALL_OF_FAME_ARCHIVE_TOKEN` if the CSV-specific var is unset.
  */
 export async function handleAdminCsvExportRequest(
   req: http.IncomingMessage,
@@ -32,7 +39,7 @@ export async function handleAdminCsvExportRequest(
     return false;
   }
 
-  const expected = process.env.ADMIN_CSV_EXPORT_TOKEN?.trim();
+  const expected = resolveAdminCsvExportToken();
   if (!expected) {
     jsonError(res, 503, { error: "export_not_configured" });
     return true;

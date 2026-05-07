@@ -13,6 +13,7 @@ import { collectIdsFromDirectedPairs } from "./headToHead";
 import { opsLog } from "./opsLog";
 import { SNIPES_LOG_LIMIT, buildSnipesApiPayload, collectIdsForSnipeLog } from "./snipeHistory";
 import { handleAdminCsvExportRequest } from "./adminCsvExport";
+import { handleAdminDatabaseMutationRequests } from "./adminDatabaseMutationsHttp";
 import { handleHallOfFameRequest } from "./hallOfFameHttp";
 
 /** Top 3 by ELO among graph nodes (gold / silver / bronze in viewer). */
@@ -278,6 +279,8 @@ export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Se
       return;
     }
 
+    if (await handleAdminDatabaseMutationRequests(req, res, db)) return;
+
     if (await handleAdminCsvExportRequest(req, res, db)) return;
 
     if (await handleHallOfFameRequest(req, res, { ...platformCtx, getGuild })) return;
@@ -287,7 +290,7 @@ export function startGraphHttpServer(port: number, opts: GraphHttpOpts): http.Se
 
   server.listen(port, "0.0.0.0", () => {
     console.log(
-      `[snipe-graph] HTTP on 0.0.0.0:${port} — graph /graph/ — hall /hof/ — admin CSV /api/admin/database.csv`
+      `[snipe-graph] HTTP on 0.0.0.0:${port} — graph /graph/ — hall /hof/ — admin /api/admin/database.csv|reset-season|database-import`
     );
   });
 

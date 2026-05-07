@@ -3,6 +3,7 @@ import type { WebClient } from "@slack/web-api";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EloDb } from "./db";
 import { handleAdminCsvExportRequest } from "./adminCsvExport";
+import { handleAdminDatabaseMutationRequests } from "./adminDatabaseMutationsHttp";
 import { handleHallOfFameRequest } from "./hallOfFameHttp";
 import { handleGraphSiteRequest, type GraphHttpPlatformContext } from "./graphHttpServer";
 import { filterSlackGraphHumanPlayerIds, resolveSlackDisplayNames } from "./slackDisplayNames";
@@ -80,6 +81,7 @@ export function slackGraphBoltCustomRoutes(args: {
   });
 
   const runAdminHallGraph = attachGraphHandler(makeCtx, async (req, res, c) => {
+    if (await handleAdminDatabaseMutationRequests(req, res, c.db)) return;
     if (await handleAdminCsvExportRequest(req, res, c.db)) return;
     const handled = await handleHallOfFameRequest(req, res, {
       ...c,
@@ -91,6 +93,8 @@ export function slackGraphBoltCustomRoutes(args: {
   });
 
   return [
+    { path: "/api/admin/reset-season", method: "POST", handler: runAdminHallGraph },
+    { path: "/api/admin/database-import", method: "POST", handler: runAdminHallGraph },
     { path: "/api/admin/database.csv", method: "GET", handler: runAdminHallGraph },
     { path: "/api/graph/redeem", method: "POST", handler: runAdminHallGraph },
     { path: "/api/graph/data", method: "GET", handler: runAdminHallGraph },

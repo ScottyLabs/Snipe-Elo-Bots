@@ -1,0 +1,59 @@
+Hall of fame CSV import (award cycles from files you drop here)
+===============================================================
+
+Put any *.csv in this folder and run from the repo root:
+
+   DISCORD_DB_PATH=./snipe-elo-discord.sqlite3 DISCORD_GUILD_ID=<your-discord-guild-snowflake> npm run hof:import
+
+On Railway (one-off), use the same env vars as the bot.
+
+Two supported formats (the importer picks by the first non-empty line):
+
+──────────────────────────────────────────────────────────────────────
+A) Admin database export (exact file from GET /api/admin/database.csv)
+──────────────────────────────────────────────────────────────────────
+
+- First non-empty line looks like:  # TABLE:<some_table_name>
+- The importer reads the # TABLE:players section and creates one hall
+  cycle per distinct guild_id in that section.
+- Cycle title = your filename without .csv (e.g. 25F-26M.csv -> title "25F-26M").
+  If several guilds appear in players, titles become "<basename> — <guild_id>".
+- Subtitle is always "Discord guild <id>".
+- closed_at = max(updated_at) from those player rows (or now if missing).
+- display names in the snapshot are the raw player_id (export has no nicknames).
+
+Other # TABLE: sections are ignored for hall import (they stay in the file).
+
+──────────────────────────────────────────────────────────────────────
+B) Hand-written hall file
+──────────────────────────────────────────────────────────────────────
+
+Line 1 must be exactly:
+
+  # hall_of_fame_import v1
+
+Then meta rows (key,value CSV), then # standings, then rank,player_id,display_name,rating
+(see older examples in git history or ask for a template.)
+
+──────────────────────────────────────────────────────────────────────
+After import
+──────────────────────────────────────────────────────────────────────
+
+- Success: file moved to hall-of-fame-inbox/processed/
+- Failure: file moved to hall-of-fame-inbox/failed/ plus a .err.txt
+- Unrecognized CSV (neither format): left in inbox, message on stderr
+
+──────────────────────────────────────────────────────────────────────
+How to verify it worked
+──────────────────────────────────────────────────────────────────────
+
+1) Database (same DISCORD_DB_PATH you used for import):
+
+   sqlite3 "$DISCORD_DB_PATH" "SELECT guild_id, title, closed_at FROM hall_of_fame_cycles ORDER BY closed_at DESC;"
+
+   You should see one row per archived cycle (admin-export imports: one cycle per distinct guild_id in
+   # TABLE:players; if the export had several guilds, titles look like "<filename> — <guild_id>").
+
+2) Website: open GRAPH_PUBLIC_BASE_URL/hof/ , enter a fresh /snipegraph code for the guild you care about.
+   Cycles listed are only those whose guild_id matches that code’s server. Use the graph’s “Hall of fame”
+   link or redeem again if you use a different browser profile.

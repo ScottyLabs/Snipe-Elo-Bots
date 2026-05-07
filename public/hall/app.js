@@ -1,6 +1,26 @@
 /* global fetch */
 const TOKEN_KEY = "snipeGraphToken";
 
+/** Same storage as /graph/ so Hall opens in a new tab after redeeming on the graph. */
+function graphTokenGet() {
+  const fromLs = localStorage.getItem(TOKEN_KEY);
+  if (fromLs) return fromLs;
+  const fromSs = sessionStorage.getItem(TOKEN_KEY);
+  if (fromSs) {
+    localStorage.setItem(TOKEN_KEY, fromSs);
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+  return fromSs;
+}
+function graphTokenSet(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+function graphTokenClear() {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
 function escHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -128,7 +148,7 @@ async function redeem() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
     });
-    sessionStorage.setItem(TOKEN_KEY, out.token);
+    graphTokenSet(out.token);
     document.getElementById("loginOverlay").classList.add("hidden");
     document.getElementById("logoutBtn").classList.remove("hidden");
     await loadCycles(out.token);
@@ -141,7 +161,7 @@ async function redeem() {
 }
 
 function logout() {
-  sessionStorage.removeItem(TOKEN_KEY);
+  graphTokenClear();
   document.getElementById("loginOverlay").classList.remove("hidden");
   document.getElementById("logoutBtn").classList.add("hidden");
   document.getElementById("main").classList.add("hidden");
@@ -154,7 +174,7 @@ async function boot() {
     if (e.key === "Enter") redeem();
   });
   document.getElementById("logoutBtn").addEventListener("click", logout);
-  const existing = sessionStorage.getItem(TOKEN_KEY);
+  const existing = graphTokenGet();
   if (existing) {
     try {
       await fetchJson("/api/hof/cycles", { headers: { Authorization: "Bearer " + existing } });
@@ -162,7 +182,7 @@ async function boot() {
       document.getElementById("logoutBtn").classList.remove("hidden");
       await loadCycles(existing);
     } catch (_e) {
-      sessionStorage.removeItem(TOKEN_KEY);
+      graphTokenClear();
     }
   }
 }

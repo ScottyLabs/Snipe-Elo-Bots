@@ -5,6 +5,13 @@ snipe-elo.sqlite3
 snipe-elo-discord.sqlite3
 .DS_Store
 
+# Hall of fame operator drops (import with npm run hof:import)
+hall-of-fame-inbox/*.csv
+hall-of-fame-inbox/processed/*
+!hall-of-fame-inbox/processed/.gitkeep
+hall-of-fame-inbox/failed/*
+!hall-of-fame-inbox/failed/.gitkeep
+
 # Character.AI voice generation output (local dev)
 scripts/cai/out/
 

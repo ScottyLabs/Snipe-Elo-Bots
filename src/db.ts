@@ -4,6 +4,8 @@ import fs from "fs";
 import path from "path";
 import { calendarDateKeyInTimeZone } from "./bounty";
 import { bountyEnv } from "./bountyEnv";
+import type { FlatCsvTableSection } from "./flatCsvExportParse";
+import { looksLikeAdminDatabaseFlatCsv, parseFlatCsvExportSections } from "./flatCsvExportParse";
 import { eloEnv } from "./eloEnv";
 import { computePairRatingDeltas } from "./elo";
 import { opsLog } from "./opsLog";
@@ -1594,6 +1596,119 @@ export class EloDb {
    * Single UTF-8 CSV: one section per non-internal SQLite table. Each section starts with
    * `# TABLE:tablename`, then a header row, then RFC 4180 data rows (for admin download only).
    */
+  /**
+   * Wipe snipe / duel / bounty / graph-session state and reset every player rating to `INITIAL_RATING`.
+   * Preserves `kv`, `hall_of_fame_cycles`, `polls`, and `poll_votes`.
+   */
+  adminResetSeasonPreserveMeta(): void {
+    const now = Date.now();
+    const r0 = eloEnv.initialRating;
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM bounty_first_snipes`).run();
+      this.db.prepare(`DELETE FROM daily_bounty_targets`).run();
+      this.db.prepare(`DELETE FROM event_pair_matches`).run();
+      this.db.prepare(`DELETE FROM event_player_changes`).run();
+      this.db.prepare(`DELETE FROM snipe_events`).run();
+      this.db.prepare(`DELETE FROM snipe_duels`).run();
+      this.db.prepare(`DELETE FROM graph_passcodes`).run();
+      this.db.prepare(`DELETE FROM graph_sessions`).run();
+      this.db.prepare(`UPDATE players SET rating = ?, updated_at = ?`).run(r0, now);
+    })();
+    this.checkpoint();
+    opsLog("admin.reset_season", { initialRating: r0 });
+  }
+
+  /**
+   * Replace DB contents with a flat CSV from `GET /api/admin/database.csv` (same `# TABLE:` sections).
+   * Wipes all application tables then inserts from the file. Use only with backups.
+   */
+  adminReplaceDatabaseFromFlatExportCsv(csvText: string): void {
+    if (!looksLikeAdminDatabaseFlatCsv(csvText)) {
+      throw new Error("CSV does not look like an admin database export (expected # TABLE:…)");
+    }
+    const sections = parseFlatCsvExportSections(csvText);
+    if (sections.size === 0) throw new Error("no # TABLE: sections in CSV");
+
+    /** FK-safe insert order (only tables we ship in exports). */
+    const tableOrder = [
+      "kv",
+      "players",
+      "daily_bounty_targets",
+      "hall_of_fame_cycles",
+      "graph_passcodes",
+      "graph_sessions",
+      "polls",
+      "poll_votes",
+      "snipe_events",
+      "event_player_changes",
+      "event_pair_matches",
+      "bounty_first_snipes",
+      "snipe_duels",
+    ] as const;
+    const allowed = new Set<string>(tableOrder);
+
+    for (const name of sections.keys()) {
+      if (!allowed.has(name)) {
+        throw new Error(`Unknown or unsupported table in CSV: ${name}`);
+      }
+    }
+
+    const deleteOrder = [
+      "bounty_first_snipes",
+      "event_pair_matches",
+      "event_player_changes",
+      "snipe_events",
+      "poll_votes",
+      "polls",
+      "snipe_duels",
+      "daily_bounty_targets",
+      "graph_passcodes",
+      "graph_sessions",
+      "hall_of_fame_cycles",
+      "players",
+      "kv",
+    ];
+
+    let inserted = 0;
+    this.db.transaction(() => {
+      this.db.pragma("foreign_keys = OFF");
+      for (const t of deleteOrder) {
+        this.db.prepare(`DELETE FROM "${t}"`).run();
+      }
+      for (const table of tableOrder) {
+        const sec = sections.get(table);
+        if (!sec) continue;
+        this.insertTableFromFlatCsvSection(table, sec);
+        inserted++;
+      }
+    })();
+    this.checkpoint();
+    opsLog("admin.database_import_csv", { tablesInserted: inserted });
+  }
+
+  private insertTableFromFlatCsvSection(table: string, sec: FlatCsvTableSection): void {
+    const headers = sec.headers.map((h) => h.trim()).filter((h) => h.length > 0);
+    if (headers.length === 0) return;
+    for (const h of headers) {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(h)) {
+        throw new Error(`bad column name ${h} in table ${table}`);
+      }
+    }
+    const colList = headers.map((c) => `"${c}"`).join(", ");
+    const placeholders = headers.map(() => "?").join(", ");
+    const stmt = this.db.prepare(
+      `INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`
+    );
+    for (const cells of sec.rows) {
+      const values: (string | null)[] = headers.map((_, i) => {
+        const v = cells[i];
+        if (v === undefined || v === null || String(v).trim() === "") return null;
+        return String(v);
+      });
+      stmt.run(...values);
+    }
+  }
+
   writeAdminDatabaseFlatCsv(write: (chunk: string) => void): void {
     this.checkpoint();
     const tableNames = this.db
