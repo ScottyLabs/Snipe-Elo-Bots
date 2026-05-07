@@ -122,12 +122,12 @@ async function loadCycles(token) {
     gn;
   const wrap = document.getElementById("cycles");
   const empty = document.getElementById("emptyHint");
-  if (!cycles.length) {
-    empty.classList.remove("hidden");
-    wrap.innerHTML = "";
-  } else {
+  if (cycles.length) {
     empty.classList.add("hidden");
     wrap.innerHTML = cycles.map(renderCycle).join("");
+  } else {
+    empty.classList.remove("hidden");
+    wrap.innerHTML = "";
   }
   document.getElementById("main").classList.remove("hidden");
 }
@@ -166,6 +166,7 @@ function logout() {
   document.getElementById("logoutBtn").classList.add("hidden");
   document.getElementById("main").classList.add("hidden");
   document.getElementById("cycles").innerHTML = "";
+  document.getElementById("emptyHint").classList.add("hidden");
 }
 
 async function boot() {

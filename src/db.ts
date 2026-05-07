@@ -1530,6 +1530,26 @@ export class EloDb {
     return this.mapHallOfFameRow(row);
   }
 
+  /**
+   * Removes the newest cycle for `guildId` (by `closed_at`, then `created_at`).
+   * Does not restore live ratings; use only to drop a mistaken archive row.
+   */
+  deleteLatestHallOfFameCycle(guildId: string): { deleted: boolean; cycleId?: string; title?: string } {
+    const row = this.db
+      .prepare(
+        `SELECT cycle_id, title FROM hall_of_fame_cycles WHERE guild_id = ?
+         ORDER BY closed_at DESC, created_at DESC LIMIT 1`
+      )
+      .get(guildId) as { cycle_id: string; title: string } | undefined;
+    if (!row) return { deleted: false };
+    this.db
+      .prepare(`DELETE FROM hall_of_fame_cycles WHERE guild_id = ? AND cycle_id = ?`)
+      .run(guildId, row.cycle_id);
+    this.checkpoint();
+    opsLog("hof.deleted_latest", { guildId, cycleId: row.cycle_id });
+    return { deleted: true, cycleId: row.cycle_id, title: row.title };
+  }
+
   purgeExpiredGraphRows(): void {
     const now = Date.now();
     this.db.prepare(`DELETE FROM graph_passcodes WHERE expires_at < ?`).run(now);
