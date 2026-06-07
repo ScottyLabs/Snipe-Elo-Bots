@@ -10,7 +10,7 @@ import {
   takeSlackHumanLeaderboardPaged,
   type SlackInfoClient,
 } from "./slackDisplayNames";
-import { bountyAutoAnnounceShouldSkip } from "./bountyManual";
+import { bountyAutoAnnounceShouldSkip, bountyAutoAnnounceTargetsUnchanged } from "./bountyManual";
 import { L } from "./voice";
 
 type SlackBountyClient = SlackInfoClient & {
@@ -31,7 +31,12 @@ export async function announceSlackBountyForDate(
   const sorted = db.getAllPlayersSorted(guildId);
   const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sorted, bountyEnv.topN);
   const targetIds = allHumans.map((p) => p.playerId).slice(0, bountyEnv.topN);
+  const unchanged = bountyAutoAnnounceTargetsUnchanged(db, guildId, dateKey, targetIds);
   db.upsertDailyBountyTargets(guildId, dateKey, targetIds, Date.now());
+  if (unchanged) {
+    opsLog("bounty.announce_skipped_unchanged", { platform: "slack", guildId, dateKey, count: targetIds.length });
+    return;
+  }
   const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
   if (targetIds.length === 0) {
     await client.chat.postMessage({
@@ -108,7 +113,12 @@ async function announceDiscordBountyForGuild(
   const sorted = db.getAllPlayersSorted(guildId);
   const { allHumans, nameMap } = await takeDiscordHumanLeaderboardPaged(guild, sorted, bountyEnv.topN);
   const targetIds = allHumans.map((p) => p.playerId).slice(0, bountyEnv.topN);
+  const unchanged = bountyAutoAnnounceTargetsUnchanged(db, guildId, dateKey, targetIds);
   db.upsertDailyBountyTargets(guildId, dateKey, targetIds, Date.now());
+  if (unchanged) {
+    opsLog("bounty.announce_skipped_unchanged", { platform: "discord", guildId, dateKey, count: targetIds.length });
+    return;
+  }
   const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
   const ch = await guild.channels.fetch(channelId).catch(() => null);
   if (!ch || !ch.isTextBased()) return;

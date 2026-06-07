@@ -25,6 +25,15 @@ export function timeHourMinuteInTimeZone(
   return { hour, minute, dateKey };
 }
 
+/** Previous calendar day as YYYY-MM-DD (dateKey is YYYY-MM-DD). */
+export function previousCalendarDateKey(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return dateKey;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 export function formatBountyDateLabel(dateKey: string, timeZone: string): string {
   const [y, m, day] = dateKey.split("-").map(Number);
   if (!y || !m || !day) return dateKey;

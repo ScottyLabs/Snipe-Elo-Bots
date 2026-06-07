@@ -1,9 +1,35 @@
-import { calendarDateKeyInTimeZone } from "./bounty";
+import { calendarDateKeyInTimeZone, previousCalendarDateKey } from "./bounty";
 import { bountyEnv } from "./bountyEnv";
 import type { EloDb } from "./db";
 
 /** When this meta equals today's `bounty_date` key, automatic midnight/catch-up bounty upserts are skipped. */
 export const BOUNTY_MANUAL_DATE_META_KEY = "bounty_targets_manual_date";
+
+export function bountyTargetIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * True when automatic daily bounty announcement would repeat the same mark list:
+ * today's stored row matches, or (on first store for the day) yesterday's list matches.
+ */
+export function bountyAutoAnnounceTargetsUnchanged(
+  db: EloDb,
+  guildId: string,
+  dateKey: string,
+  computedTargetIds: string[]
+): boolean {
+  const todayRow = db.getDailyBountyAnnouncementRow(guildId, dateKey);
+  if (todayRow !== null) {
+    return bountyTargetIdsEqual(todayRow.targetIds, computedTargetIds);
+  }
+  const previousTargets = db.getDailyBountyTargets(guildId, previousCalendarDateKey(dateKey));
+  return bountyTargetIdsEqual(previousTargets, computedTargetIds);
+}
 
 export function bountyAutoAnnounceShouldSkip(db: EloDb, guildId: string, dateKey: string): boolean {
   if (!bountyEnv.enabled) return true;
