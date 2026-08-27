@@ -59,6 +59,7 @@ import {
   mergePlayerScoresAfterLink,
   cacheDiscordDisplayName,
   canonicalLeaderboardLabel,
+  reconcileNullDisplayNames,
 } from "../identityMap";
 
 const DART = "🎯";
@@ -574,6 +575,12 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       skipGuildIds: discordConfig.bridgedGuildId ? [discordConfig.bridgedGuildId] : undefined,
     });
 
+    if (discordConfig.bridgedGuildId && c.guilds.cache.has(discordConfig.bridgedGuildId)) {
+      const bridgedGuild = c.guilds.cache.get(discordConfig.bridgedGuildId)!;
+      void reconcileNullDisplayNames({
+        discord: (ids) => resolveDiscordDisplayNames(bridgedGuild, ids),
+      }).catch((e: unknown) => opsLog('identityMap.reconcileNames.discordStartupError', { error: String(e) }));
+    }
     options?.onReady?.(c);
   });
 
