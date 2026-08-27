@@ -95,7 +95,9 @@ export function canonicalLeaderboardLabel(canonicalId: string): string {
 // Cache Slack display name into player_profiles (call after resolving name during snipe).
 // Only has effect in unified mode; caller must guard on config.sharedGuildId.
 export function cacheSlackDisplayName(slackId: string, displayName: string): void {
-  const canonical = toCanonical('slack', slackId);
+  // Strip 'slack:' prefix if caller passed a canonical ID instead of raw Slack ID.
+  const rawSlackId = slackId.startsWith('slack:') ? slackId.slice(6) : slackId;
+  const canonical = toCanonical('slack', rawSlackId);
   _db.updateProfileDisplayName(canonical, 'slack', displayName);
 }
 
@@ -103,6 +105,48 @@ export function cacheSlackDisplayName(slackId: string, displayName: string): voi
 export function cacheDiscordDisplayName(discordId: string, displayName: string): void {
   // discordId is already canonical for Discord users.
   _db.updateProfileDisplayName(discordId, 'discord', displayName);
+}
+
+// Use in unified mode wherever resolveSlackDisplayNames is called with canonical IDs.
+// Recovers raw Slack IDs from canonicals, calls Slack API, caches results.
+// For Discord-only players (no Slack link), returns their cached Discord display name.
+export async function resolveCanonicalNamesViaSlack(
+  slackResolver: (ids: string[]) => Promise<Map<string, string>>,
+  canonicalIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const rawToCanonical = new Map<string, string>();
+
+  for (const canonical of canonicalIds) {
+    const rawSlackId = canonical.startsWith('slack:')
+      ? canonical.slice(6)
+      : slackIdForCanonical(canonical); // Keycloak-linked: canonical is Discord snowflake
+    if (rawSlackId) {
+      rawToCanonical.set(rawSlackId, canonical);
+    } else {
+      // Discord-only player: no Slack account, use cached Discord display name.
+      const profile = _db.getProfileByCanonical(canonical);
+      result.set(canonical, profile?.discordDisplayName ?? canonical);
+    }
+  }
+
+  if (rawToCanonical.size > 0) {
+    const slackNames = await slackResolver([...rawToCanonical.keys()]);
+    for (const [rawSlackId, name] of slackNames) {
+      const canonical = rawToCanonical.get(rawSlackId)!;
+      cacheSlackDisplayName(rawSlackId, name);
+      result.set(canonical, name);
+    }
+    // Fall back to cached profile for any the API couldn't resolve.
+    for (const [, canonical] of rawToCanonical) {
+      if (!result.has(canonical)) {
+        const profile = _db.getProfileByCanonical(canonical);
+        result.set(canonical, profile?.slackDisplayName ?? canonical);
+      }
+    }
+  }
+
+  return result;
 }
 
 // On startup in unified mode: fill in null display names by calling platform resolvers.

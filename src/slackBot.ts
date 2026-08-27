@@ -35,6 +35,7 @@ import {
   cacheSlackDisplayName,
   canonicalLeaderboardLabel,
   reconcileNullDisplayNames,
+  resolveCanonicalNamesViaSlack,
 } from "./identityMap";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
 import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
@@ -350,12 +351,9 @@ async function executeSlackSetBounty(args: {
       targetIds: markIds.map(id => config.sharedGuildId ? toCanonical('slack', id) : id),
     });
     const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
-    const names = await resolveSlackDisplayNames(args.client, targetIds);
-    if (config.sharedGuildId) {
-      for (const [slackId, name] of names) {
-        cacheSlackDisplayName(slackId, name);
-      }
-    }
+    const names = config.sharedGuildId
+      ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(args.client, ids), targetIds)
+      : await resolveSlackDisplayNames(args.client, targetIds);
     const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(names.get(id) ?? id));
     let channelText =
       L.bountyDailyAnnouncementSlack({ dateLabel, rankedLines }) +
@@ -532,12 +530,9 @@ async function executeSlackAdjustBounty(args: {
         addTargetIds: markIds,
       });
       const addDateLabel = formatBountyDateLabel(addDateKey, bountyEnv.timezone);
-      const addNames = await resolveSlackDisplayNames(client, targetIds);
-      if (config.sharedGuildId) {
-        for (const [slackId, name] of addNames) {
-          cacheSlackDisplayName(slackId, name);
-        }
-      }
+      const addNames = config.sharedGuildId
+        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), targetIds)
+        : await resolveSlackDisplayNames(client, targetIds);
       const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(addNames.get(id) ?? id));
       let channelText =
         L.bountyDailyAnnouncementSlack({ dateLabel: addDateLabel, rankedLines }) +
@@ -597,12 +592,9 @@ async function executeSlackAdjustBounty(args: {
         channelText =
           L.adjustBountyListEmptyAfterRemove("slack", rmDateLabel) + "\n\n" + L.setBountyOperatorFooter("slack");
       } else {
-        const rmNames = await resolveSlackDisplayNames(client, targetIds);
-        if (config.sharedGuildId) {
-          for (const [slackId, name] of rmNames) {
-            cacheSlackDisplayName(slackId, name);
-          }
-        }
+        const rmNames = config.sharedGuildId
+          ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), targetIds)
+          : await resolveSlackDisplayNames(client, targetIds);
         const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(rmNames.get(id) ?? id));
         channelText =
           L.bountyDailyAnnouncementSlack({ dateLabel: rmDateLabel, rankedLines }) +
@@ -792,12 +784,9 @@ export async function startSlackBot(params: {
     const { pairMatches: displayPairMatches, playerChanges: displayPlayerChanges } =
       mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
     const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
-    const snipeNames = await resolveSlackDisplayNames(app.client, snipeIds);
-    if (config.sharedGuildId) {
-      for (const [slackId, name] of snipeNames) {
-        cacheSlackDisplayName(slackId, name);
-      }
-    }
+    const snipeNames = config.sharedGuildId
+      ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(app.client, ids), snipeIds)
+      : await resolveSlackDisplayNames(app.client, snipeIds);
     const nameOf = (id: string) => escapeSlackLeaderboardName(snipeNames.get(id) ?? id);
 
     const nowMs = Date.now();
@@ -1094,12 +1083,9 @@ export async function startSlackBot(params: {
       const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
       const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
       const snipeLogIds = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
-      const snipeLogNames = await resolveSlackDisplayNames(client, snipeLogIds);
-      if (config.sharedGuildId) {
-        for (const [slackId, name] of snipeLogNames) {
-          cacheSlackDisplayName(slackId, name);
-        }
-      }
+      const snipeLogNames = config.sharedGuildId
+        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), snipeLogIds)
+        : await resolveSlackDisplayNames(client, snipeLogIds);
       const snipeLogNameOf = (id: string) => escapeSlackLeaderboardName(snipeLogNames.get(id) ?? id);
       const body = formatSlackSnipesList(asSniper, asSniped, snipeLogNameOf(targetUserId), snipeLogNameOf);
       const parts = chunkSlackText(body);
@@ -1148,12 +1134,9 @@ export async function startSlackBot(params: {
         await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
         return;
       }
-      const h2hNames = await resolveSlackDisplayNames(client, h2hIds);
-      if (config.sharedGuildId) {
-        for (const [slackId, name] of h2hNames) {
-          cacheSlackDisplayName(slackId, name);
-        }
-      }
+      const h2hNames = config.sharedGuildId
+        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), h2hIds)
+        : await resolveSlackDisplayNames(client, h2hIds);
       const h2hNameOf = (id: string) => escapeSlackLeaderboardName(h2hNames.get(id) ?? id);
       const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOf });
       if (!png) {
@@ -1217,12 +1200,9 @@ export async function startSlackBot(params: {
       const canvasId = await ensureCanvasOnce();
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
       const undoIds = undoResult.playerChanges.map((c) => c.playerId);
-      const undoNames = await resolveSlackDisplayNames(client, undoIds);
-      if (config.sharedGuildId) {
-        for (const [slackId, name] of undoNames) {
-          cacheSlackDisplayName(slackId, name);
-        }
-      }
+      const undoNames = config.sharedGuildId
+        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), undoIds)
+        : await resolveSlackDisplayNames(client, undoIds);
       const undoNameOf = (id: string) => escapeSlackLeaderboardName(undoNames.get(id) ?? id);
       const undoText = formatUndoConfirmation({
         kind: "undo",
@@ -1366,12 +1346,9 @@ export async function startSlackBot(params: {
       });
       const canvasId = await ensureCanvasOnce();
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
-      const adjNames = await resolveSlackDisplayNames(client, [change.playerId]);
-      if (config.sharedGuildId) {
-        for (const [slackId, name] of adjNames) {
-          cacheSlackDisplayName(slackId, name);
-        }
-      }
+      const adjNames = config.sharedGuildId
+        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), [change.playerId])
+        : await resolveSlackDisplayNames(client, [change.playerId]);
       const adjNameOf = (id: string) => escapeSlackLeaderboardName(adjNames.get(id) ?? id);
       await client.chat.postMessage({
         channel: command.channel_id,
@@ -1651,12 +1628,9 @@ export async function startSlackBot(params: {
           const canvasId = await ensureCanvasOnce();
           await updateLeaderboardCanvas({ client, db: params.db, canvasId });
           const undoIdsText = undoResult.playerChanges.map((c) => c.playerId);
-          const undoNamesText = await resolveSlackDisplayNames(client, undoIdsText);
-          if (config.sharedGuildId) {
-            for (const [slackId, name] of undoNamesText) {
-              cacheSlackDisplayName(slackId, name);
-            }
-          }
+          const undoNamesText = config.sharedGuildId
+            ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), undoIdsText)
+            : await resolveSlackDisplayNames(client, undoIdsText);
           const undoNameOfText = (id: string) => escapeSlackLeaderboardName(undoNamesText.get(id) ?? id);
           const undoText = formatUndoConfirmation({
             kind: "undo",
@@ -1813,12 +1787,9 @@ export async function startSlackBot(params: {
             const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
             const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
             const snipeLogIdsText = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
-            const snipeLogNamesText = await resolveSlackDisplayNames(client, snipeLogIdsText);
-            if (config.sharedGuildId) {
-              for (const [slackId, name] of snipeLogNamesText) {
-                cacheSlackDisplayName(slackId, name);
-              }
-            }
+            const snipeLogNamesText = config.sharedGuildId
+              ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), snipeLogIdsText)
+              : await resolveSlackDisplayNames(client, snipeLogIdsText);
             const snipeLogNameOfText = (id: string) => escapeSlackLeaderboardName(snipeLogNamesText.get(id) ?? id);
             const body = formatSlackSnipesList(
               asSniper,
@@ -1865,12 +1836,9 @@ export async function startSlackBot(params: {
               opsLog("command.text.headtohead", { userId, channelId });
               return;
             }
-            const h2hNamesText = await resolveSlackDisplayNames(client, h2hIdsText);
-            if (config.sharedGuildId) {
-              for (const [slackId, name] of h2hNamesText) {
-                cacheSlackDisplayName(slackId, name);
-              }
-            }
+            const h2hNamesText = config.sharedGuildId
+              ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), h2hIdsText)
+              : await resolveSlackDisplayNames(client, h2hIdsText);
             const h2hNameOfText = (id: string) => escapeSlackLeaderboardName(h2hNamesText.get(id) ?? id);
             const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOfText });
             if (!png) {
@@ -2056,12 +2024,9 @@ export async function startSlackBot(params: {
             });
             const canvasId = await ensureCanvasOnce();
             await updateLeaderboardCanvas({ client, db: params.db, canvasId });
-            const adjNamesTxt = await resolveSlackDisplayNames(client, [change.playerId]);
-            if (config.sharedGuildId) {
-              for (const [slackId, name] of adjNamesTxt) {
-                cacheSlackDisplayName(slackId, name);
-              }
-            }
+            const adjNamesTxt = config.sharedGuildId
+              ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), [change.playerId])
+              : await resolveSlackDisplayNames(client, [change.playerId]);
             const adjNameOfTxt = (id: string) => escapeSlackLeaderboardName(adjNamesTxt.get(id) ?? id);
             await client.chat.postMessage({
               channel: channelId,
@@ -2265,12 +2230,9 @@ export async function startSlackBot(params: {
         const aToB = params.db.countDirectedSnipesInWindow(slackEffectiveGuildId(), a, b, since, until);
         const bToA = params.db.countDirectedSnipesInWindow(slackEffectiveGuildId(), b, a, since, until);
         const now = Date.now();
-        const names = await resolveSlackDisplayNames(app.client, [a, b]);
-        if (config.sharedGuildId) {
-          for (const [slackId, name] of names) {
-            cacheSlackDisplayName(slackId, name);
-          }
-        }
+        const names = config.sharedGuildId
+          ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(app.client, ids), [a, b])
+          : await resolveSlackDisplayNames(app.client, [a, b]);
         const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
 
         if (aToB === bToA) {
