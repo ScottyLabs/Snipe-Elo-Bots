@@ -34,6 +34,7 @@ import {
   mergePlayerScoresAfterLink,
   cacheSlackDisplayName,
   canonicalLeaderboardLabel,
+  reconcileNullDisplayNames,
 } from "./identityMap";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
 import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
@@ -872,13 +873,18 @@ export async function startSlackBot(params: {
     const claims = params.db.getBountyFirstSnipesForDate(slackEffectiveGuildId(), dk);
     const claimantIds = [...new Set(claims.map((c) => c.sniperId))];
     const resolveIds = [...new Set([...ids, ...claimantIds])];
-    const names = await resolveSlackDisplayNames(client, resolveIds);
+    const names = config.sharedGuildId
+      ? new Map<string, string>()
+      : await resolveSlackDisplayNames(client, resolveIds);
     if (config.sharedGuildId) {
       for (const [slackId, name] of names) {
         cacheSlackDisplayName(slackId, name);
       }
     }
-    const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
+    const nameOf = (id: string) =>
+      config.sharedGuildId
+        ? escapeSlackLeaderboardName(canonicalLeaderboardLabel(id))
+        : escapeSlackLeaderboardName(names.get(id) ?? id);
     return formatBountyStatusMessage({
       platform: "slack",
       db: params.db,
@@ -2321,6 +2327,12 @@ export async function startSlackBot(params: {
   });
 
   startSlackBountyScheduler(app.client, params.db, slackEffectiveGuildId(), config.slack.channelId);
+
+  if (config.sharedGuildId) {
+    void reconcileNullDisplayNames({
+      slack: (ids) => resolveSlackDisplayNames(app.client, ids),
+    }).catch((e: unknown) => opsLog('identityMap.reconcileNames.slackStartupError', { error: String(e) }));
+  }
 
   opsLog("service.ready", { port: config.server.port, socketMode: useSocketMode });
 }

@@ -105,6 +105,50 @@ export function cacheDiscordDisplayName(discordId: string, displayName: string):
   _db.updateProfileDisplayName(discordId, 'discord', displayName);
 }
 
+// On startup in unified mode: fill in null display names by calling platform resolvers.
+// Each resolver receives raw platform IDs and returns a name map. Call once after bot is ready.
+export async function reconcileNullDisplayNames(resolvers: {
+  slack?: (ids: string[]) => Promise<Map<string, string>>;
+  discord?: (ids: string[]) => Promise<Map<string, string>>;
+}): Promise<void> {
+  const profiles = _db.getAllPlayerProfiles();
+
+  if (resolvers.slack) {
+    const needsSlack = profiles
+      .filter(p => p.slackId && !p.slackDisplayName)
+      .map(p => p.slackId!);
+    if (needsSlack.length > 0) {
+      try {
+        const names = await resolvers.slack(needsSlack);
+        for (const [slackId, name] of names) {
+          const canonical = toCanonical('slack', slackId);
+          _db.updateProfileDisplayName(canonical, 'slack', name);
+        }
+        opsLog('identityMap.reconcileNames.slack', { count: names.size });
+      } catch (e) {
+        opsLog('identityMap.reconcileNames.slackError', { error: String(e) });
+      }
+    }
+  }
+
+  if (resolvers.discord) {
+    const needsDiscord = profiles
+      .filter(p => p.discordId && !p.discordDisplayName)
+      .map(p => p.discordId!);
+    if (needsDiscord.length > 0) {
+      try {
+        const names = await resolvers.discord(needsDiscord);
+        for (const [discordId, name] of names) {
+          _db.updateProfileDisplayName(discordId, 'discord', name);
+        }
+        opsLog('identityMap.reconcileNames.discord', { count: names.size });
+      } catch (e) {
+        opsLog('identityMap.reconcileNames.discordError', { error: String(e) });
+      }
+    }
+  }
+}
+
 // --- Keycloak refresh loop (internal) ---
 
 function _startKeycloakRefreshLoop(): void {

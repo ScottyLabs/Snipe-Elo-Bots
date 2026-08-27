@@ -12,6 +12,8 @@ import {
 } from "./slackDisplayNames";
 import { bountyAutoAnnounceShouldSkip, bountyAutoAnnounceTargetsUnchanged } from "./bountyManual";
 import { L } from "./voice";
+import { config } from "./config";
+import { canonicalLeaderboardLabel } from "./identityMap";
 
 type SlackBountyClient = SlackInfoClient & {
   chat: {
@@ -29,8 +31,18 @@ export async function announceSlackBountyForDate(
   if (!bountyEnv.enabled) return;
   if (bountyAutoAnnounceShouldSkip(db, guildId, dateKey)) return;
   const sorted = db.getAllPlayersSorted(guildId);
-  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sorted, bountyEnv.topN);
-  const targetIds = allHumans.map((p) => p.playerId).slice(0, bountyEnv.topN);
+  let targetIds: string[];
+  let displayNames: Map<string, string>;
+  if (config.sharedGuildId) {
+    // Unified mode: player IDs are canonical; no Slack API bot-filtering needed.
+    const cap = bountyEnv.topN > 0 ? bountyEnv.topN : sorted.length;
+    targetIds = sorted.slice(0, cap).map(p => p.playerId);
+    displayNames = new Map(targetIds.map(id => [id, canonicalLeaderboardLabel(id)]));
+  } else {
+    const paged = await takeSlackHumanLeaderboardPaged(client, sorted, bountyEnv.topN);
+    targetIds = paged.allHumans.map(p => p.playerId).slice(0, bountyEnv.topN);
+    displayNames = paged.displayNames;
+  }
   const unchanged = bountyAutoAnnounceTargetsUnchanged(db, guildId, dateKey, targetIds);
   db.upsertDailyBountyTargets(guildId, dateKey, targetIds, Date.now());
   if (unchanged) {
