@@ -2,6 +2,8 @@ import { config } from "./config";
 import { EloDb } from "./db";
 import { opsLog } from "./opsLog";
 import { startSlackBot } from "./slackBot";
+import { initIdentityMap } from "./identityMap";
+import { reconcileFromDiscordDb } from "./reconcileFromDiscordDb";
 
 async function main() {
   opsLog("service.boot", {
@@ -9,6 +11,19 @@ async function main() {
     dbPath: config.storage.dbPath,
   });
   const db = new EloDb(config.storage.dbPath);
+  if (config.sharedGuildId) {
+    initIdentityMap(db);
+    const mergeFromPath = process.env.MERGE_FROM_DB_PATH?.trim();
+    const mergeFromGuildId = process.env.MERGE_FROM_GUILD_ID?.trim();
+    if (mergeFromPath && mergeFromGuildId) {
+      reconcileFromDiscordDb({
+        unifiedDb: db,
+        sharedGuildId: config.sharedGuildId,
+        discordDbPath: mergeFromPath,
+        discordGuildId: mergeFromGuildId,
+      });
+    }
+  }
   const shutdown = (signal: NodeJS.Signals) => {
     try {
       opsLog("service.shutdown", { signal });

@@ -26,7 +26,15 @@ import {
   takeSlackHumanLeaderboardPaged,
 } from "./slackDisplayNames";
 import { buildSlackSnipeConfirmationPostPayload } from "./slackSnipeGifPost";
-import { SLACK_GUILD_ID } from "./tenants";
+import { SLACK_GUILD_ID, slackEffectiveGuildId } from "./tenants";
+import {
+  toCanonical,
+  slackIdForCanonical,
+  upsertLink,
+  mergePlayerScoresAfterLink,
+  cacheSlackDisplayName,
+  canonicalLeaderboardLabel,
+} from "./identityMap";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
 import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatSlackSnipesList } from "./snipeHistory";
@@ -83,8 +91,17 @@ async function buildSlackLeaderboardBlockKit(args: {
   const title = config.leaderboard.title;
   const pageSize = config.leaderboard.pageSize;
   const topN = config.leaderboard.topN;
-  const sorted = db.getAllPlayersSorted(SLACK_GUILD_ID);
-  const { allHumans, displayNames } = await takeSlackHumanLeaderboardPaged(client, sorted, topN);
+  const sorted = db.getAllPlayersSorted(slackEffectiveGuildId());
+  let allHumans: { playerId: string; rating: number }[];
+  let leaderNameOf: (id: string) => string;
+  if (config.sharedGuildId) {
+    allHumans = sorted;
+    leaderNameOf = (id) => escapeSlackLeaderboardName(canonicalLeaderboardLabel(id));
+  } else {
+    const paged = await takeSlackHumanLeaderboardPaged(client, sorted, topN);
+    allHumans = paged.allHumans;
+    leaderNameOf = (id) => escapeSlackLeaderboardName(paged.displayNames.get(id) ?? id);
+  }
   const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
   const page = clampLeaderboardPage(args.page, totalPages);
   const start = (page - 1) * pageSize;
@@ -100,7 +117,7 @@ async function buildSlackLeaderboardBlockKit(args: {
     const plainLines: string[] = [`${title} · page ${page} of ${totalPages}`, ""];
     let rank = start + 1;
     for (const p of pagePlayers) {
-      const label = escapeSlackLeaderboardName(displayNames.get(p.playerId) ?? p.playerId);
+      const label = leaderNameOf(p.playerId);
       mdLines.push(`${rank}. ${label} — *${p.rating}*`);
       plainLines.push(`${rank}. ${label} — ${p.rating}`);
       rank++;
@@ -328,11 +345,16 @@ async function executeSlackSetBounty(args: {
     }
     const { dateKey, targetIds, truncated } = applyManualBountyTargets({
       db: args.db,
-      guildId: SLACK_GUILD_ID,
-      targetIds: markIds,
+      guildId: slackEffectiveGuildId(),
+      targetIds: markIds.map(id => config.sharedGuildId ? toCanonical('slack', id) : id),
     });
     const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
     const names = await resolveSlackDisplayNames(args.client, targetIds);
+    if (config.sharedGuildId) {
+      for (const [slackId, name] of names) {
+        cacheSlackDisplayName(slackId, name);
+      }
+    }
     const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(names.get(id) ?? id));
     let channelText =
       L.bountyDailyAnnouncementSlack({ dateLabel, rankedLines }) +
@@ -388,7 +410,7 @@ async function executeSlackAdjustBounty(args: {
   const sub = tokens[0].toLowerCase();
 
   if (sub === "clear") {
-    const n = db.clearBountyFirstSnipeClaimsForDate(SLACK_GUILD_ID, dateKey);
+    const n = db.clearBountyFirstSnipeClaimsForDate(slackEffectiveGuildId(), dateKey);
     if (n === 0) {
       return { ok: false, ephemeral: L.adjustBountyClearNone() };
     }
@@ -411,7 +433,7 @@ async function executeSlackAdjustBounty(args: {
         return { ok: false, ephemeral: L.setBountyNoMentions() };
       }
       const removed = db.deleteBountyFirstSnipeClaim({
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         bountyDate: dateKey,
         bountyTargetId: markId,
       });
@@ -422,6 +444,11 @@ async function executeSlackAdjustBounty(args: {
         return { ok: false, ephemeral: L.adjustBountyNotClaimed(name) };
       }
       const names = await resolveSlackDisplayNames(client, [markId]);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of names) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const markName = escapeSlackLeaderboardName(names.get(markId) ?? markId);
       return { ok: true, channelText: L.adjustBountyPublicUnclaim("slack", { dateLabel, markName }) };
     } catch (e: unknown) {
@@ -451,7 +478,7 @@ async function executeSlackAdjustBounty(args: {
           return { ok: false, ephemeral: L.setBountyNoMentions() };
         }
       }
-      const targets = db.getDailyBountyTargets(SLACK_GUILD_ID, dateKey);
+      const targets = db.getDailyBountyTargets(slackEffectiveGuildId(), dateKey);
       if (!targets.includes(markId)) {
         const mn = escapeSlackLeaderboardName(
           (await resolveSlackDisplayNames(client, [markId])).get(markId) ?? markId
@@ -459,12 +486,17 @@ async function executeSlackAdjustBounty(args: {
         return { ok: false, ephemeral: L.adjustBountyMarkNotOnList(mn) };
       }
       db.upsertManualBountyFirstSnipe({
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         bountyDate: dateKey,
         bountyTargetId: markId,
         sniperId,
       });
       const names = await resolveSlackDisplayNames(client, [sniperId, markId]);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of names) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const sniperName = escapeSlackLeaderboardName(names.get(sniperId) ?? sniperId);
       const markName = escapeSlackLeaderboardName(names.get(markId) ?? markId);
       return {
@@ -495,11 +527,16 @@ async function executeSlackAdjustBounty(args: {
       }
       const { dateKey: addDateKey, targetIds, truncated, actuallyAdded } = appendManualBountyTargets({
         db,
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         addTargetIds: markIds,
       });
       const addDateLabel = formatBountyDateLabel(addDateKey, bountyEnv.timezone);
       const addNames = await resolveSlackDisplayNames(client, targetIds);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of addNames) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(addNames.get(id) ?? id));
       let channelText =
         L.bountyDailyAnnouncementSlack({ dateLabel: addDateLabel, rankedLines }) +
@@ -550,7 +587,7 @@ async function executeSlackAdjustBounty(args: {
       }
       const { dateKey: rmDateKey, targetIds, actuallyRemoved } = removeManualBountyTargets({
         db,
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         removeTargetIds: markIds,
       });
       const rmDateLabel = formatBountyDateLabel(rmDateKey, bountyEnv.timezone);
@@ -560,6 +597,11 @@ async function executeSlackAdjustBounty(args: {
           L.adjustBountyListEmptyAfterRemove("slack", rmDateLabel) + "\n\n" + L.setBountyOperatorFooter("slack");
       } else {
         const rmNames = await resolveSlackDisplayNames(client, targetIds);
+        if (config.sharedGuildId) {
+          for (const [slackId, name] of rmNames) {
+            cacheSlackDisplayName(slackId, name);
+          }
+        }
         const rankedLines = targetIds.map((id) => escapeSlackLeaderboardName(rmNames.get(id) ?? id));
         channelText =
           L.bountyDailyAnnouncementSlack({ dateLabel: rmDateLabel, rankedLines }) +
@@ -702,6 +744,10 @@ export async function startSlackBot(params: {
     });
     return res?.ts as string | undefined;
   };
+  function resolveSlackPlayer(slackUserId: string): string {
+    return config.sharedGuildId ? toCanonical('slack', slackUserId) : slackUserId;
+  }
+
 
   const handleApplySnipe = async (args: {
     type: "snipe" | "makeup";
@@ -725,13 +771,13 @@ export async function startSlackBot(params: {
     const canvasId = await ensureCanvasOnce();
 
     const result = params.db.applySnipe({
-      guildId: SLACK_GUILD_ID,
+      guildId: slackEffectiveGuildId(),
       type: args.type,
       channelId: args.channelId,
       threadTs: args.threadTs,
       sourceMessageTs: args.sourceMessageTs,
-      sniperId: args.sniperId,
-      snipedIds: args.snipedIds,
+      sniperId: resolveSlackPlayer(args.sniperId),
+      snipedIds: args.snipedIds.map(resolveSlackPlayer),
     });
 
     if (args.reactSource && args.sourceMessageTs) {
@@ -746,14 +792,19 @@ export async function startSlackBot(params: {
       mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
     const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
     const snipeNames = await resolveSlackDisplayNames(app.client, snipeIds);
+    if (config.sharedGuildId) {
+      for (const [slackId, name] of snipeNames) {
+        cacheSlackDisplayName(slackId, name);
+      }
+    }
     const nameOf = (id: string) => escapeSlackLeaderboardName(snipeNames.get(id) ?? id);
 
     const nowMs = Date.now();
     const activeDuels = collectActiveDuelsForSnipe(
       params.db,
-      SLACK_GUILD_ID,
-      args.sniperId,
-      args.snipedIds,
+      slackEffectiveGuildId(),
+      resolveSlackPlayer(args.sniperId),
+      args.snipedIds.map(resolveSlackPlayer),
       nowMs
     );
     const duelAppend =
@@ -764,7 +815,7 @@ export async function startSlackBot(params: {
                 duel: d,
                 nameOf,
                 db: params.db,
-                guildId: SLACK_GUILD_ID,
+                guildId: slackEffectiveGuildId(),
                 nowMs,
               })
             )
@@ -795,7 +846,7 @@ export async function startSlackBot(params: {
       confirmationTs = posted;
     }
     if (confirmationTs) {
-      params.db.setConfirmationMessageTs(SLACK_GUILD_ID, result.snipeId, confirmationTs);
+      params.db.setConfirmationMessageTs(slackEffectiveGuildId(), result.snipeId, confirmationTs);
     }
 
     await updateLeaderboardCanvas({ client: app.client, db: params.db, canvasId });
@@ -816,17 +867,22 @@ export async function startSlackBot(params: {
 
   const buildSlackBountyStatusMarkdown = async (client: any): Promise<string> => {
     const dk = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
-    const row = params.db.getDailyBountyAnnouncementRow(SLACK_GUILD_ID, dk);
+    const row = params.db.getDailyBountyAnnouncementRow(slackEffectiveGuildId(), dk);
     const ids = row?.targetIds ?? [];
-    const claims = params.db.getBountyFirstSnipesForDate(SLACK_GUILD_ID, dk);
+    const claims = params.db.getBountyFirstSnipesForDate(slackEffectiveGuildId(), dk);
     const claimantIds = [...new Set(claims.map((c) => c.sniperId))];
     const resolveIds = [...new Set([...ids, ...claimantIds])];
     const names = await resolveSlackDisplayNames(client, resolveIds);
+    if (config.sharedGuildId) {
+      for (const [slackId, name] of names) {
+        cacheSlackDisplayName(slackId, name);
+      }
+    }
     const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
     return formatBountyStatusMessage({
       platform: "slack",
       db: params.db,
-      guildId: SLACK_GUILD_ID,
+      guildId: slackEffectiveGuildId(),
       nameOf,
     });
   };
@@ -973,7 +1029,7 @@ export async function startSlackBot(params: {
         const result = await executeSlackBountyRecalc({
           client,
           db: params.db,
-          guildId: SLACK_GUILD_ID,
+          guildId: slackEffectiveGuildId(),
           channelId: command.channel_id,
         });
         if (!result.ok) {
@@ -1029,10 +1085,15 @@ export async function startSlackBot(params: {
       targetUserId = id;
     }
     try {
-      const asSniper = params.db.getRecentSnipesForSniper(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
-      const asSniped = params.db.getRecentSnipesAsSniped(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+      const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
+      const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
       const snipeLogIds = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
       const snipeLogNames = await resolveSlackDisplayNames(client, snipeLogIds);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of snipeLogNames) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const snipeLogNameOf = (id: string) => escapeSlackLeaderboardName(snipeLogNames.get(id) ?? id);
       const body = formatSlackSnipesList(asSniper, asSniped, snipeLogNameOf(targetUserId), snipeLogNameOf);
       const parts = chunkSlackText(body);
@@ -1054,7 +1115,7 @@ export async function startSlackBot(params: {
       await respond({ response_type: "ephemeral", text: L.graphViewerNotConfigured() });
       return;
     }
-    const { code, expiresAtMs } = params.db.issueGraphPasscode(SLACK_GUILD_ID);
+    const { code, expiresAtMs } = params.db.issueGraphPasscode(slackEffectiveGuildId());
     const siteUrl = `${base}/graph/`;
     const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
     await respond({
@@ -1075,13 +1136,18 @@ export async function startSlackBot(params: {
       return;
     }
     try {
-      const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
+      const rows = params.db.getDirectedSnipePairCounts(slackEffectiveGuildId());
       const h2hIds = collectIdsFromDirectedPairs(rows);
       if (h2hIds.length === 0) {
         await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
         return;
       }
       const h2hNames = await resolveSlackDisplayNames(client, h2hIds);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of h2hNames) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const h2hNameOf = (id: string) => escapeSlackLeaderboardName(h2hNames.get(id) ?? id);
       const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOf });
       if (!png) {
@@ -1127,7 +1193,7 @@ export async function startSlackBot(params: {
     }
     opsLog("command.slash.removesnipe", { userId: command.user_id, channelId: command.channel_id, threadTs });
     try {
-      const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);
+      const snipe = params.db.getLatestUndoableSnipeEventForThread(slackEffectiveGuildId(), threadTs);
       if (!snipe) {
         opsLog("command.slash.removesnipe.result", { result: "nothing_to_undo", threadTs });
         await respond({
@@ -1137,7 +1203,7 @@ export async function startSlackBot(params: {
         return;
       }
       const undoResult = params.db.undoSnipeEvent({
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         channelId: command.channel_id,
         threadTs,
         snipeIdToUndo: snipe.snipeId,
@@ -1146,6 +1212,11 @@ export async function startSlackBot(params: {
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
       const undoIds = undoResult.playerChanges.map((c) => c.playerId);
       const undoNames = await resolveSlackDisplayNames(client, undoIds);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of undoNames) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const undoNameOf = (id: string) => escapeSlackLeaderboardName(undoNames.get(id) ?? id);
       const undoText = formatUndoConfirmation({
         kind: "undo",
@@ -1283,13 +1354,18 @@ export async function startSlackBot(params: {
         return;
       }
       const change = params.db.adjustPlayerRating({
-        guildId: SLACK_GUILD_ID,
-        playerId: targetUserId,
+        guildId: slackEffectiveGuildId(),
+        playerId: resolveSlackPlayer(targetUserId),
         delta,
       });
       const canvasId = await ensureCanvasOnce();
       await updateLeaderboardCanvas({ client, db: params.db, canvasId });
       const adjNames = await resolveSlackDisplayNames(client, [change.playerId]);
+      if (config.sharedGuildId) {
+        for (const [slackId, name] of adjNames) {
+          cacheSlackDisplayName(slackId, name);
+        }
+      }
       const adjNameOf = (id: string) => escapeSlackLeaderboardName(adjNames.get(id) ?? id);
       await client.chat.postMessage({
         channel: command.channel_id,
@@ -1455,13 +1531,14 @@ export async function startSlackBot(params: {
       });
       const rootTs = posted.ts as string;
       params.db.insertSnipeDuel({
-        guildId: SLACK_GUILD_ID,
+        guildId: slackEffectiveGuildId(),
         channelId: command.channel_id,
         rootMessageTs: rootTs,
-        challengerId: command.user_id,
-        targetId: targetUserId,
+        challengerId: resolveSlackPlayer(command.user_id),
+        targetId: resolveSlackPlayer(targetUserId),
         betPoints: bet,
         durationMs,
+        platform: 'slack',
       });
       await respond({ response_type: "ephemeral", text: L.snipeDuelPostedEphemeral() });
       opsLog("command.slash.snipeduel", {
@@ -1487,7 +1564,7 @@ export async function startSlackBot(params: {
       parsed,
       db: params.db,
       client,
-      guildId: SLACK_GUILD_ID,
+      guildId: slackEffectiveGuildId(),
       channelId: command.channel_id,
       userId: command.user_id,
       slashPollPath: config.slackOps.slashPoll,
@@ -1554,13 +1631,13 @@ export async function startSlackBot(params: {
         }
         opsLog("command.text.removesnipe", { userId, channelId, threadTs });
         try {
-          const snipe = params.db.getLatestUndoableSnipeEventForThread(SLACK_GUILD_ID, threadTs);
+          const snipe = params.db.getLatestUndoableSnipeEventForThread(slackEffectiveGuildId(), threadTs);
           if (!snipe) {
             await postEphemeral(L.removesnipeNothingInThread());
             return;
           }
           const undoResult = params.db.undoSnipeEvent({
-            guildId: SLACK_GUILD_ID,
+            guildId: slackEffectiveGuildId(),
             channelId,
             threadTs,
             snipeIdToUndo: snipe.snipeId,
@@ -1569,6 +1646,11 @@ export async function startSlackBot(params: {
           await updateLeaderboardCanvas({ client, db: params.db, canvasId });
           const undoIdsText = undoResult.playerChanges.map((c) => c.playerId);
           const undoNamesText = await resolveSlackDisplayNames(client, undoIdsText);
+          if (config.sharedGuildId) {
+            for (const [slackId, name] of undoNamesText) {
+              cacheSlackDisplayName(slackId, name);
+            }
+          }
           const undoNameOfText = (id: string) => escapeSlackLeaderboardName(undoNamesText.get(id) ?? id);
           const undoText = formatUndoConfirmation({
             kind: "undo",
@@ -1589,7 +1671,7 @@ export async function startSlackBot(params: {
 
       // Poll votes: reply in the poll thread with only the option number.
       if (threadTs && text && /^\d+$/.test(text.trim())) {
-        const pollRow = params.db.getActivePollByRootMessage(SLACK_GUILD_ID, channelId, threadTs, Date.now());
+        const pollRow = params.db.getActivePollByRootMessage(slackEffectiveGuildId(), channelId, threadTs, Date.now());
         if (pollRow) {
           const choice = parseInt(text.trim(), 10);
           if (!Number.isFinite(choice) || choice < 1 || choice > pollRow.options.length) {
@@ -1605,7 +1687,7 @@ export async function startSlackBot(params: {
 
       // Duel accept / decline / cancel in the challenge thread (plain text; always on).
       if (threadTs && text) {
-        const duel = params.db.getSnipeDuelByRootMessageTs(SLACK_GUILD_ID, threadTs);
+        const duel = params.db.getSnipeDuelByRootMessageTs(slackEffectiveGuildId(), threadTs);
         if (duel && duel.status === "pending") {
           if (isCommandBody(lower, "cancelduel")) {
             if (userId !== duel.challengerId) {
@@ -1613,7 +1695,7 @@ export async function startSlackBot(params: {
               return;
             }
             try {
-              params.db.declineSnipeDuel(duel.duelId, SLACK_GUILD_ID);
+              params.db.declineSnipeDuel(duel.duelId, slackEffectiveGuildId());
               await client.chat.postMessage({
                 channel: channelId,
                 thread_ts: threadTs,
@@ -1635,7 +1717,7 @@ export async function startSlackBot(params: {
               try {
                 const acceptedAt = Date.now();
                 const endsAt = acceptedAt + duel.durationMs;
-                params.db.acceptSnipeDuel(duel.duelId, SLACK_GUILD_ID, acceptedAt, endsAt);
+                params.db.acceptSnipeDuel(duel.duelId, slackEffectiveGuildId(), acceptedAt, endsAt);
                 const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
                 await client.chat.postMessage({
                   channel: channelId,
@@ -1651,7 +1733,7 @@ export async function startSlackBot(params: {
             }
             if (isCommandBody(lower, "declineduel")) {
               try {
-                params.db.declineSnipeDuel(duel.duelId, SLACK_GUILD_ID);
+                params.db.declineSnipeDuel(duel.duelId, slackEffectiveGuildId());
                 await client.chat.postMessage({
                   channel: channelId,
                   thread_ts: threadTs,
@@ -1665,6 +1747,30 @@ export async function startSlackBot(params: {
               return;
             }
           }
+        }
+      }
+
+      // linkaccounts: always-on privileged admin command to link a Slack user to a Discord account.
+      if (text) {
+        const lcMatch = text.match(
+          /^linkaccounts\s+(?:<@([UW][A-Z0-9]+)(?:\|[^>]*)?>|([UW][A-Z0-9]+))\s+(\d{17,20})$/i
+        );
+        if (lcMatch) {
+          if (!config.slackOps.adjustEloAllowedSlackUserIds.includes(userId)) {
+            await postEphemeral("You are not authorized to link accounts.");
+            return;
+          }
+          const slackId = (lcMatch[1] ?? lcMatch[2]) as string;
+          const discordId = lcMatch[3];
+          if (!config.sharedGuildId) {
+            await postEphemeral("Unified mode is not configured (SHARED_GUILD_ID missing).");
+            return;
+          }
+          upsertLink(slackId, discordId, 'manual');
+          mergePlayerScoresAfterLink(params.db, config.sharedGuildId, slackId, discordId);
+          await postEphemeral(`Linked <@${slackId}> to Discord \`${discordId}\`. Scores merged.`);
+          opsLog("command.text.linkaccounts", { userId, slackId, discordId });
+          return;
         }
       }
 
@@ -1698,10 +1804,15 @@ export async function startSlackBot(params: {
             targetUserId = tid;
           }
           try {
-            const asSniper = params.db.getRecentSnipesForSniper(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
-            const asSniped = params.db.getRecentSnipesAsSniped(SLACK_GUILD_ID, targetUserId, SNIPES_LOG_LIMIT);
+            const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
+            const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
             const snipeLogIdsText = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
             const snipeLogNamesText = await resolveSlackDisplayNames(client, snipeLogIdsText);
+            if (config.sharedGuildId) {
+              for (const [slackId, name] of snipeLogNamesText) {
+                cacheSlackDisplayName(slackId, name);
+              }
+            }
             const snipeLogNameOfText = (id: string) => escapeSlackLeaderboardName(snipeLogNamesText.get(id) ?? id);
             const body = formatSlackSnipesList(
               asSniper,
@@ -1727,7 +1838,7 @@ export async function startSlackBot(params: {
             await postEphemeral(L.graphViewerNotConfigured());
             return;
           }
-          const { code, expiresAtMs } = params.db.issueGraphPasscode(SLACK_GUILD_ID);
+          const { code, expiresAtMs } = params.db.issueGraphPasscode(slackEffectiveGuildId());
           const siteUrl = `${base}/graph/`;
           const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
           await postEphemeral(L.graphCodeEphemeralSlack({ code, siteUrl, redeemSeconds }));
@@ -1737,7 +1848,7 @@ export async function startSlackBot(params: {
 
         if (isCommandBody(lower, plainCmd.headtohead)) {
           try {
-            const rows = params.db.getDirectedSnipePairCounts(SLACK_GUILD_ID);
+            const rows = params.db.getDirectedSnipePairCounts(slackEffectiveGuildId());
             const h2hIdsText = collectIdsFromDirectedPairs(rows);
             if (h2hIdsText.length === 0) {
               await client.chat.postMessage({
@@ -1749,6 +1860,11 @@ export async function startSlackBot(params: {
               return;
             }
             const h2hNamesText = await resolveSlackDisplayNames(client, h2hIdsText);
+            if (config.sharedGuildId) {
+              for (const [slackId, name] of h2hNamesText) {
+                cacheSlackDisplayName(slackId, name);
+              }
+            }
             const h2hNameOfText = (id: string) => escapeSlackLeaderboardName(h2hNamesText.get(id) ?? id);
             const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOfText });
             if (!png) {
@@ -1780,7 +1896,7 @@ export async function startSlackBot(params: {
             parsed,
             db: params.db,
             client,
-            guildId: SLACK_GUILD_ID,
+            guildId: slackEffectiveGuildId(),
             channelId,
             userId,
             slashPollPath: config.slackOps.slashPoll,
@@ -1809,7 +1925,7 @@ export async function startSlackBot(params: {
               const result = await executeSlackBountyRecalc({
                 client,
                 db: params.db,
-                guildId: SLACK_GUILD_ID,
+                guildId: slackEffectiveGuildId(),
                 channelId,
               });
               if (!result.ok) {
@@ -1928,13 +2044,18 @@ export async function startSlackBot(params: {
               return;
             }
             const change = params.db.adjustPlayerRating({
-              guildId: SLACK_GUILD_ID,
-              playerId: targetUserId,
+              guildId: slackEffectiveGuildId(),
+              playerId: resolveSlackPlayer(targetUserId),
               delta,
             });
             const canvasId = await ensureCanvasOnce();
             await updateLeaderboardCanvas({ client, db: params.db, canvasId });
             const adjNamesTxt = await resolveSlackDisplayNames(client, [change.playerId]);
+            if (config.sharedGuildId) {
+              for (const [slackId, name] of adjNamesTxt) {
+                cacheSlackDisplayName(slackId, name);
+              }
+            }
             const adjNameOfTxt = (id: string) => escapeSlackLeaderboardName(adjNamesTxt.get(id) ?? id);
             await client.chat.postMessage({
               channel: channelId,
@@ -2127,31 +2248,37 @@ export async function startSlackBot(params: {
   await app.start(config.server.port);
 
   const settleDueSnipeDuels = async () => {
-    const due = params.db.listSnipeDuelsDueForSettlement(SLACK_GUILD_ID, Date.now());
+    const due = params.db.listSnipeDuelsDueForSettlement(slackEffectiveGuildId(), Date.now());
     for (const duel of due) {
+      if (duel.platform !== 'slack') continue;
       try {
         const a = duel.challengerId;
         const b = duel.targetId;
         const since = duel.acceptedAt ?? 0;
         const until = duel.endsAt ?? Date.now();
-        const aToB = params.db.countDirectedSnipesInWindow(SLACK_GUILD_ID, a, b, since, until);
-        const bToA = params.db.countDirectedSnipesInWindow(SLACK_GUILD_ID, b, a, since, until);
+        const aToB = params.db.countDirectedSnipesInWindow(slackEffectiveGuildId(), a, b, since, until);
+        const bToA = params.db.countDirectedSnipesInWindow(slackEffectiveGuildId(), b, a, since, until);
         const now = Date.now();
         const names = await resolveSlackDisplayNames(app.client, [a, b]);
+        if (config.sharedGuildId) {
+          for (const [slackId, name] of names) {
+            cacheSlackDisplayName(slackId, name);
+          }
+        }
         const nameOf = (id: string) => escapeSlackLeaderboardName(names.get(id) ?? id);
 
         if (aToB === bToA) {
-          params.db.settleSnipeDuel(duel.duelId, SLACK_GUILD_ID, null, now);
+          params.db.settleSnipeDuel(duel.duelId, slackEffectiveGuildId(), null, now);
         } else {
           const winnerId = aToB > bToA ? a : b;
           const loserId = aToB > bToA ? b : a;
-          params.db.adjustPlayerRating({ guildId: SLACK_GUILD_ID, playerId: winnerId, delta: duel.betPoints });
-          params.db.adjustPlayerRating({ guildId: SLACK_GUILD_ID, playerId: loserId, delta: -duel.betPoints });
-          params.db.settleSnipeDuel(duel.duelId, SLACK_GUILD_ID, winnerId, now);
+          params.db.adjustPlayerRating({ guildId: slackEffectiveGuildId(), playerId: winnerId, delta: duel.betPoints });
+          params.db.adjustPlayerRating({ guildId: slackEffectiveGuildId(), playerId: loserId, delta: -duel.betPoints });
+          params.db.settleSnipeDuel(duel.duelId, slackEffectiveGuildId(), winnerId, now);
         }
         const canvasId = await ensureCanvasOnce();
         await updateLeaderboardCanvas({ client: app.client, db: params.db, canvasId });
-        const text = formatDuelSettlementMessage({ duel, nameOf, db: params.db, guildId: SLACK_GUILD_ID });
+        const text = formatDuelSettlementMessage({ duel, nameOf, db: params.db, guildId: slackEffectiveGuildId() });
         await app.client.chat.postMessage({ channel: duel.channelId, text, mrkdwn: true });
         opsLog("duel.settled", {
           duelId: duel.duelId,
@@ -2176,7 +2303,7 @@ export async function startSlackBot(params: {
     const purged = await purgeSlackBotPlayersFromDb(params.db, app.client);
     if (purged > 0) {
       logger.log(`[snipe-elo] Purged ${purged} bot ELO row(s) from SQLite`);
-      const canvasId = params.db.getMeta(SLACK_GUILD_ID, "leaderboard_canvas_id");
+      const canvasId = params.db.getMeta(slackEffectiveGuildId(), "leaderboard_canvas_id");
       if (canvasId) {
         await updateLeaderboardCanvas({ client: app.client, db: params.db, canvasId });
       }
@@ -2193,7 +2320,7 @@ export async function startSlackBot(params: {
     opsLog("canvas.ensure.startup_failed", { error: msg });
   });
 
-  startSlackBountyScheduler(app.client, params.db, SLACK_GUILD_ID, config.slack.channelId);
+  startSlackBountyScheduler(app.client, params.db, slackEffectiveGuildId(), config.slack.channelId);
 
   opsLog("service.ready", { port: config.server.port, socketMode: useSocketMode });
 }

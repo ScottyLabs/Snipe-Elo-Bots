@@ -5,7 +5,8 @@ buildCommand = "npm run build"
 
 [deploy]
 # Select bot entrypoint per service with BOT_PLATFORM:
-# - BOT_PLATFORM=slack   -> dist/index.js
-# - BOT_PLATFORM=discord -> dist/indexDiscord.js
+# - BOT_PLATFORM=slack    -> dist/index.js              (Slack-only)
+# - BOT_PLATFORM=discord  -> dist/indexDiscord.js       (Discord-only)
+# - BOT_PLATFORM=unified  -> both bots in one service   (shared SQLite, set DB_PATH + SHARED_GUILD_ID)
 # Defaults to Slack when unset.
-startCommand = "sh -lc 'if [ \"$BOT_PLATFORM\" = \"discord\" ]; then node dist/indexDiscord.js; else node dist/index.js; fi'"
+startCommand = "sh -lc 'if [ \"$BOT_PLATFORM\" = \"discord\" ]; then node dist/indexDiscord.js; elif [ \"$BOT_PLATFORM\" = \"unified\" ]; then node dist/indexDiscord.js & node dist/index.js; else node dist/index.js; fi'"

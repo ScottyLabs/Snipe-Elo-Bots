@@ -56,6 +56,16 @@ export type SnipeDuelRow = {
   settledAt: number | null;
   winnerId: string | null;
   createdAt: number;
+  platform: 'slack' | 'discord';
+};
+
+export type PlayerProfile = {
+  canonicalId: string;
+  slackId: string | null;
+  discordId: string | null;
+  slackDisplayName: string | null;
+  discordDisplayName: string | null;
+  source: string;
 };
 
 function mapSnipeDuelRow(row: Record<string, unknown>): SnipeDuelRow {
@@ -74,6 +84,7 @@ function mapSnipeDuelRow(row: Record<string, unknown>): SnipeDuelRow {
     settledAt: (row.settled_at as number | null) ?? null,
     winnerId: (row.winner_id as string | null) ?? null,
     createdAt: row.created_at as number,
+    platform: ((row.platform as string | null) ?? 'discord') as 'slack' | 'discord',
   };
 }
 
@@ -352,6 +363,18 @@ export class EloDb {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_hof_guild_closed ON hall_of_fame_cycles(guild_id, closed_at DESC);
+
+      CREATE TABLE IF NOT EXISTS player_profiles(
+        canonical_id         TEXT PRIMARY KEY,
+        slack_id             TEXT UNIQUE,
+        discord_id           TEXT UNIQUE,
+        slack_display_name   TEXT,
+        discord_display_name TEXT,
+        source               TEXT NOT NULL,
+        created_at           INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_pp_slack   ON player_profiles(slack_id)   WHERE slack_id   IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_pp_discord ON player_profiles(discord_id) WHERE discord_id IS NOT NULL;
     `);
     this.migrateLegacySchemaIfNeeded();
   }
@@ -418,6 +441,15 @@ export class EloDb {
         ALTER TABLE kv__mig RENAME TO kv;
       `);
       opsLog("db.migrate", { table: "kv", legacyTenant });
+    }
+
+    if (!this.tableHasColumn("snipe_duels", "platform")) {
+      this.db.exec(`ALTER TABLE snipe_duels ADD COLUMN platform TEXT`);
+      this.db.exec(`
+        UPDATE snipe_duels SET platform = 'slack'   WHERE guild_id = '__slack__';
+        UPDATE snipe_duels SET platform = 'discord' WHERE platform IS NULL;
+      `);
+      opsLog("db.migrate", { table: "snipe_duels", column: "platform" });
     }
   }
 
@@ -601,6 +633,82 @@ export class EloDb {
       .prepare(`DELETE FROM players WHERE guild_id = ? AND player_id IN (${placeholders})`)
       .run(guildId, ...playerIds);
     return Number(r.changes);
+  }
+
+  private mapProfile(row: Record<string, unknown>): PlayerProfile {
+    return {
+      canonicalId:        row.canonical_id         as string,
+      slackId:            (row.slack_id            as string | null) ?? null,
+      discordId:          (row.discord_id          as string | null) ?? null,
+      slackDisplayName:   (row.slack_display_name  as string | null) ?? null,
+      discordDisplayName: (row.discord_display_name as string | null) ?? null,
+      source:             row.source               as string,
+    };
+  }
+
+  upsertPlayerProfile(args: {
+    canonicalId: string;
+    slackId: string | null;
+    discordId: string | null;
+    source: 'keycloak' | 'manual' | 'reconciled' | 'inferred';
+  }): void {
+    this.db.prepare(
+      `INSERT INTO player_profiles(canonical_id, slack_id, discord_id, source, created_at)
+       VALUES(?,?,?,?,?)
+       ON CONFLICT(canonical_id) DO UPDATE SET
+         slack_id   = COALESCE(excluded.slack_id,   slack_id),
+         discord_id = COALESCE(excluded.discord_id, discord_id),
+         source     = excluded.source`
+    ).run(args.canonicalId, args.slackId, args.discordId, args.source, Date.now());
+  }
+
+  updateProfileDisplayName(canonicalId: string, platform: 'slack' | 'discord', displayName: string): void {
+    const col = platform === 'slack' ? 'slack_display_name' : 'discord_display_name';
+    const platformId = platform === 'slack' && canonicalId.startsWith('slack:')
+      ? canonicalId.slice(6)
+      : (!canonicalId.startsWith('slack:') ? canonicalId : null);
+    this.db.prepare(
+      `INSERT INTO player_profiles(canonical_id, slack_id, discord_id, source, created_at)
+       VALUES(?, ?, ?, 'inferred', ?)
+       ON CONFLICT(canonical_id) DO NOTHING`
+    ).run(
+      canonicalId,
+      platform === 'slack' ? platformId : null,
+      platform === 'discord' ? platformId : null,
+      Date.now()
+    );
+    this.db.prepare(`UPDATE player_profiles SET ${col} = ? WHERE canonical_id = ?`)
+      .run(displayName, canonicalId);
+  }
+
+  deletePlayerProfile(canonicalId: string): void {
+    this.db.prepare(`DELETE FROM player_profiles WHERE canonical_id = ?`).run(canonicalId);
+  }
+
+  getProfileBySlack(slackId: string): PlayerProfile | null {
+    const row = this.db.prepare(
+      `SELECT * FROM player_profiles WHERE slack_id = ?`
+    ).get(slackId) as Record<string, unknown> | undefined;
+    return row ? this.mapProfile(row) : null;
+  }
+
+  getProfileByDiscord(discordId: string): PlayerProfile | null {
+    const row = this.db.prepare(
+      `SELECT * FROM player_profiles WHERE discord_id = ?`
+    ).get(discordId) as Record<string, unknown> | undefined;
+    return row ? this.mapProfile(row) : null;
+  }
+
+  getProfileByCanonical(canonicalId: string): PlayerProfile | null {
+    const row = this.db.prepare(
+      `SELECT * FROM player_profiles WHERE canonical_id = ?`
+    ).get(canonicalId) as Record<string, unknown> | undefined;
+    return row ? this.mapProfile(row) : null;
+  }
+
+  getAllPlayerProfiles(): PlayerProfile[] {
+    const rows = this.db.prepare(`SELECT * FROM player_profiles`).all() as Record<string, unknown>[];
+    return rows.map(r => this.mapProfile(r));
   }
 
   setConfirmationMessageTs(guildId: string, snipeId: string, confirmationMessageTs: string) {
@@ -1235,6 +1343,7 @@ export class EloDb {
     targetId: string;
     betPoints: number;
     durationMs: number;
+    platform: 'slack' | 'discord';
   }): string {
     const duelId = newId();
     const now = Date.now();
@@ -1243,8 +1352,8 @@ export class EloDb {
         `INSERT INTO snipe_duels(
           duel_id, guild_id, channel_id, root_message_ts,
           challenger_id, target_id, bet_points, duration_ms,
-          status, accepted_at, ends_at, settled_at, winner_id, created_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          status, accepted_at, ends_at, settled_at, winner_id, created_at, platform
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         duelId,
@@ -1260,7 +1369,8 @@ export class EloDb {
         null,
         null,
         null,
-        now
+        now,
+        args.platform
       );
     return duelId;
   }
