@@ -140,6 +140,7 @@ export function startDiscordBountyScheduler(args: {
   db: EloDb;
   /** Same resolution as snipe handling (env map + per-guild meta). */
   resolveSnipeChannelId: (guildId: string) => string | null;
+  skipGuildIds?: string[];
 }): void {
   if (!bountyEnv.enabled) return;
   const { client, db, resolveSnipeChannelId } = args;
@@ -148,6 +149,7 @@ export function startDiscordBountyScheduler(args: {
   const warmLastKeys = () => {
     const dk = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
     for (const guild of client.guilds.cache.values()) {
+      if (args.skipGuildIds?.includes(guild.id)) continue;
       const channelId = resolveSnipeChannelId(guild.id);
       if (!channelId) continue;
       lastAnnouncedByGuild.set(
@@ -165,6 +167,7 @@ export function startDiscordBountyScheduler(args: {
     const inMidnightWindow = hour === 0 && minute < 10;
 
     for (const guild of client.guilds.cache.values()) {
+      if (args.skipGuildIds?.includes(guild.id)) continue;
       const channelId = resolveSnipeChannelId(guild.id);
       if (!channelId) continue;
 

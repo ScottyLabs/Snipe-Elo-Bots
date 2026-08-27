@@ -50,7 +50,7 @@ export const discordConfig = {
   applicationId: requireEnv("DISCORD_APPLICATION_ID"),
   guildSnipeChannels,
   tenantIdForLegacyMigration: tenantIdForLegacyMigration(guildSnipeChannels),
-  dbPath: process.env.DISCORD_DB_PATH ?? "./snipe-elo-discord.sqlite3",
+  dbPath: process.env.DISCORD_DB_PATH ?? process.env.DB_PATH ?? "./snipe-elo-discord.sqlite3",
   snipeRequireImage: !["0", "false", "no", "off"].includes(
     (process.env.SNIPE_REQUIRE_IMAGE ?? "true").toLowerCase()
   ),
@@ -59,4 +59,5 @@ export const discordConfig = {
   leaderboardTitle: process.env.LEADERBOARD_TITLE ?? "ELO Leaderboard",
   /** Public base URL for the snipe graph site (no trailing slash), e.g. https://your-app.up.railway.app */
   graphPublicBaseUrl: (process.env.GRAPH_PUBLIC_BASE_URL ?? "").replace(/\/$/, ""),
+  bridgedGuildId: process.env.DISCORD_BRIDGED_GUILD_ID?.trim() || null,
 };

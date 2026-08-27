@@ -44,7 +44,6 @@ import { startDiscordBountyScheduler } from "../bountySchedule";
 import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
 import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
-import { SLACK_GUILD_ID } from "../tenants";
 import { isCommandBody } from "../slashCommands";
 import {
   collectActiveDuelsForSnipe,
@@ -54,17 +53,25 @@ import {
   formatDurationLabel,
   parseDurationToMs,
 } from "../snipeDuel";
+import { discordEffectiveGuildId } from "./discordTenant";
+import {
+  upsertLink,
+  mergePlayerScoresAfterLink,
+  cacheDiscordDisplayName,
+  canonicalLeaderboardLabel,
+} from "../identityMap";
 
 const DART = "🎯";
 const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
 const HEADTOHEAD_EMBED_COLOR = 0x5865f2;
 
 function getGuildSnipeChannelId(db: EloDb, guildId: string): string | null {
-  return db.getMeta(guildId, SNIPE_CHANNEL_META_KEY) ?? discordConfig.guildSnipeChannels.get(guildId) ?? null;
+  const effectiveId = discordEffectiveGuildId(guildId);
+  return db.getMeta(effectiveId, SNIPE_CHANNEL_META_KEY) ?? discordConfig.guildSnipeChannels.get(guildId) ?? null;
 }
 
 function setGuildSnipeChannelId(db: EloDb, guildId: string, channelId: string): void {
-  db.setMeta(guildId, SNIPE_CHANNEL_META_KEY, channelId);
+  db.setMeta(discordEffectiveGuildId(guildId), SNIPE_CHANNEL_META_KEY, channelId);
 }
 
 function isDiscordModerator(interaction: ChatInputCommandInteraction): boolean {
@@ -119,13 +126,25 @@ async function buildDiscordLeaderboardPayload(
   guild: Guild,
   page: number
 ): Promise<{ content: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
-  const guildId = guild.id;
-  const sorted = db.getAllPlayersSorted(guildId);
-  const { allHumans, nameMap } = await takeDiscordHumanLeaderboardPaged(
-    guild,
-    sorted,
-    discordConfig.leaderboardTopN
-  );
+  const guildId = guild.id; // Discord snowflake for button routing
+  const effectiveGuildId = discordEffectiveGuildId(guildId);
+  const sorted = db.getAllPlayersSorted(effectiveGuildId);
+
+  let allHumans: typeof sorted;
+  let nameMap: Map<string, string>;
+
+  if (discordConfig.bridgedGuildId && guildId === discordConfig.bridgedGuildId) {
+    allHumans = sorted;
+    nameMap = new Map(sorted.map((p) => [p.playerId, canonicalLeaderboardLabel(p.playerId)]));
+  } else {
+    const result = await takeDiscordHumanLeaderboardPaged(
+      guild,
+      sorted,
+      discordConfig.leaderboardTopN
+    );
+    allHumans = result.allHumans;
+    nameMap = result.nameMap;
+  }
   const pageSize = discordConfig.leaderboardPageSize;
   const totalPages = allHumans.length === 0 ? 1 : Math.ceil(allHumans.length / pageSize);
   const p = clampDiscordLeaderboardPage(page, totalPages);
@@ -232,6 +251,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     sourceMessage?: Message;
     replyFn: (content: string) => Promise<Message<boolean>>;
   }) {
+    const effectiveGuildId = discordEffectiveGuildId(args.guild.id);
     opsLog("discord.snipe.apply", {
       guildId: args.guild.id,
       kind: args.type,
@@ -242,7 +262,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     });
 
     const result = db.applySnipe({
-      guildId: args.guild.id,
+      guildId: effectiveGuildId,
       type: args.type,
       channelId: args.channelId,
       threadTs: args.threadTs,
@@ -259,12 +279,17 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
     const ids = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
     const names = await resolveDiscordDisplayNames(args.guild, ids);
+    if (discordConfig.bridgedGuildId && args.guild.id === discordConfig.bridgedGuildId) {
+      for (const [discordId, name] of names) {
+        cacheDiscordDisplayName(discordId, name);
+      }
+    }
     const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
 
     const nowMs = Date.now();
     const activeDuels = collectActiveDuelsForSnipe(
       db,
-      args.guild.id,
+      effectiveGuildId,
       args.sniperId,
       args.snipedIds,
       nowMs
@@ -277,7 +302,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                 duel: d,
                 nameOf,
                 db,
-                guildId: args.guild.id,
+                guildId: effectiveGuildId,
                 nowMs,
               })
             )
@@ -298,7 +323,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     );
 
     const reply = await args.replyFn(text);
-    db.setConfirmationMessageTs(args.guild.id, result.snipeId, reply.id);
+    db.setConfirmationMessageTs(effectiveGuildId, result.snipeId, reply.id);
 
     opsLog("discord.snipe.done", {
       guildId: args.guild.id,
@@ -458,6 +483,19 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         .setName("setsnipechannel")
         .setDescription(L.discordSlashDescriptions.setsnipechannel)
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+      new SlashCommandBuilder()
+        .setName("linkaccounts")
+        .setDescription("Link a Slack user to a Discord user (moderators).")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addUserOption((o) =>
+          o.setName("discord-user").setDescription("Discord account to link").setRequired(true)
+        )
+        .addStringOption((o) =>
+          o
+            .setName("slack-user-id")
+            .setDescription("Slack member ID, e.g. U09E6EHA5R8")
+            .setRequired(true)
+        ),
     ].map((cmd) => cmd.toJSON());
 
     try {
@@ -480,7 +518,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     const settleDueDiscordSnipeDuels = async () => {
       const due = db.listAllSnipeDuelsDueForSettlement(Date.now());
       for (const duel of due) {
-        if (duel.guildId === SLACK_GUILD_ID) continue;
+        if (duel.platform !== 'discord') continue;
         try {
           const guild = await c.guilds.fetch(duel.guildId).catch(() => null);
           if (!guild) continue;
@@ -533,6 +571,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       client: c,
       db,
       resolveSnipeChannelId: (guildId) => getGuildSnipeChannelId(db, guildId),
+      skipGuildIds: discordConfig.bridgedGuildId ? [discordConfig.bridgedGuildId] : undefined,
     });
 
     options?.onReady?.(c);
@@ -599,10 +638,15 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       await interaction.deferReply();
       try {
         const target = interaction.options.getUser("player") ?? interaction.user;
-        const asSniper = db.getRecentSnipesForSniper(interaction.guild.id, target.id, SNIPES_LOG_LIMIT);
-        const asSniped = db.getRecentSnipesAsSniped(interaction.guild.id, target.id, SNIPES_LOG_LIMIT);
+        const asSniper = db.getRecentSnipesForSniper(discordEffectiveGuildId(interaction.guild.id), target.id, SNIPES_LOG_LIMIT);
+        const asSniped = db.getRecentSnipesAsSniped(discordEffectiveGuildId(interaction.guild.id), target.id, SNIPES_LOG_LIMIT);
         const snipeIds = collectIdsForSnipeLog(target.id, asSniper, asSniped);
         const snipeNames = await resolveDiscordDisplayNames(interaction.guild, snipeIds);
+        if (discordConfig.bridgedGuildId && interaction.guild.id === discordConfig.bridgedGuildId) {
+          for (const [discordId, name] of snipeNames) {
+            cacheDiscordDisplayName(discordId, name);
+          }
+        }
         const snipeNameOf = (id: string) => escapeDiscordMarkdownChunk(snipeNames.get(id) ?? id);
         const text = formatDiscordSnipesList(asSniper, asSniped, snipeNameOf(target.id), snipeNameOf);
         await interaction.editReply({ content: clampDiscordMessageContent(text) });
@@ -628,7 +672,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         await interaction.reply({ content: L.graphViewerNotConfigured(), ephemeral: true });
         return;
       }
-      const { code, expiresAtMs } = db.issueGraphPasscode(interaction.guild.id);
+      const { code, expiresAtMs } = db.issueGraphPasscode(discordEffectiveGuildId(interaction.guild.id));
       const siteUrl = `${base}/graph/`;
       const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
       await interaction.reply({
@@ -663,7 +707,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           const result = await executeDiscordBountyRecalc({
             client,
             db,
-            guildId: interaction.guild.id,
+            guildId: discordEffectiveGuildId(interaction.guild.id),
             channelId: chId,
           });
           if (!result.ok) {
@@ -691,7 +735,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       }
       await interaction.deferReply();
       try {
-        const guildId = interaction.guild.id;
+        const guildId = discordEffectiveGuildId(interaction.guild.id);
         const dateKey = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
         const row = db.getDailyBountyAnnouncementRow(guildId, dateKey);
         const bountyIds = row?.targetIds ?? [];
@@ -722,7 +766,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     if (interaction.commandName === "headtohead") {
       await interaction.deferReply();
       try {
-        const rows = db.getDirectedSnipePairCounts(interaction.guild!.id);
+        const rows = db.getDirectedSnipePairCounts(discordEffectiveGuildId(interaction.guild!.id));
         const h2hIds = collectIdsFromDirectedPairs(rows);
         const h2hNames = await resolveDiscordDisplayNames(interaction.guild, h2hIds);
         const nameForMatrix = (id: string) => {
@@ -790,7 +834,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       await interaction.deferReply();
 
       try {
-        const snipe = db.getUndoableSnipeByConfirmationMessageId(interaction.guild.id, confirmationId);
+        const snipe = db.getUndoableSnipeByConfirmationMessageId(discordEffectiveGuildId(interaction.guild.id), confirmationId);
         if (!snipe) {
           await interaction.editReply({
             content: L.discordNothingToUndo(),
@@ -798,7 +842,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           return;
         }
         const undoResult = db.undoSnipeEvent({
-          guildId: interaction.guild.id,
+          guildId: discordEffectiveGuildId(interaction.guild.id),
           channelId: interaction.channelId,
           threadTs: snipe.threadTs,
           snipeIdToUndo: snipe.snipeId,
@@ -933,13 +977,14 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
         });
         db.insertSnipeDuel({
-          guildId: interaction.guild.id,
+          guildId: discordEffectiveGuildId(interaction.guild.id),
           channelId: interaction.channelId,
           rootMessageTs: duelMsg.id,
           challengerId: interaction.user.id,
           targetId: opponent.id,
           betPoints: bet,
           durationMs,
+          platform: 'discord',
         });
         await interaction.editReply({ content: L.snipeDuelPostedEphemeral() });
         opsLog("discord.snipeduel.posted", {
@@ -1008,7 +1053,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         }
         const { dateKey, targetIds, truncated } = applyManualBountyTargets({
           db,
-          guildId: interaction.guild.id,
+          guildId: discordEffectiveGuildId(interaction.guild.id),
           targetIds: ids,
         });
         const dateLabel = formatBountyDateLabel(dateKey, bountyEnv.timezone);
@@ -1069,7 +1114,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
 
       const dateKeyAb = calendarDateKeyInTimeZone(Date.now(), bountyEnv.timezone);
       const dateLabelAb = formatBountyDateLabel(dateKeyAb, bountyEnv.timezone);
-      const guildIdAb = interaction.guild.id;
+      const guildIdAb = discordEffectiveGuildId(interaction.guild.id);
       const subAb = interaction.options.getSubcommand(true);
 
       await interaction.deferReply();
@@ -1325,7 +1370,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           return;
         }
         const change = db.adjustPlayerRating({
-          guildId: interaction.guild.id,
+          guildId: discordEffectiveGuildId(interaction.guild.id),
           playerId: target.id,
           delta,
         });
@@ -1350,6 +1395,28 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         });
       }
     }
+
+    if (interaction.commandName === "linkaccounts") {
+      if (!isDiscordModerator(interaction)) {
+        await interaction.reply({ content: 'Moderator only.', ephemeral: true });
+        return;
+      }
+      if (!discordConfig.bridgedGuildId) {
+        await interaction.reply({ content: 'Unified mode is not configured (DISCORD_BRIDGED_GUILD_ID missing).', ephemeral: true });
+        return;
+      }
+      const discordUser = interaction.options.getUser('discord-user', true);
+      const slackId = interaction.options.getString('slack-user-id', true).trim();
+      if (!/^[UW][A-Z0-9]+$/i.test(slackId)) {
+        await interaction.reply({ content: 'Invalid Slack member ID format.', ephemeral: true });
+        return;
+      }
+      const discordId = discordUser.id;
+      upsertLink(slackId, discordId, 'manual');
+      mergePlayerScoresAfterLink(db, discordEffectiveGuildId(interaction.guild!.id), slackId, discordId);
+      await interaction.reply({ content: `Linked <@${discordId}> to Slack \`${slackId}\`. Scores merged.`, ephemeral: true });
+      return;
+    }
   });
 
   client.on(Events.MessageCreate, async (message) => {
@@ -1362,7 +1429,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       if (raw) {
         const duelRootId = await resolveDuelRootMessageId(message, snipeChannelId);
         if (duelRootId) {
-          const duel = db.getSnipeDuelByRootMessageTs(message.guild.id, duelRootId);
+          const duel = db.getSnipeDuelByRootMessageTs(discordEffectiveGuildId(message.guild.id), duelRootId);
           if (duel && duel.status === "pending") {
             const lower = raw.toLowerCase();
             if (isCommandBody(lower, "cancelduel")) {
@@ -1371,7 +1438,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                 return;
               }
               try {
-                db.declineSnipeDuel(duel.duelId, message.guild.id);
+                db.declineSnipeDuel(duel.duelId, discordEffectiveGuildId(message.guild.id));
                 await message.reply({ content: L.duelCancelledByChallengerPublic() });
                 opsLog("discord.duel.cancel", { duelId: duel.duelId, userId: message.author.id });
               } catch (e) {
@@ -1389,7 +1456,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
                 try {
                   const acceptedAt = Date.now();
                   const endsAt = acceptedAt + duel.durationMs;
-                  db.acceptSnipeDuel(duel.duelId, message.guild.id, acceptedAt, endsAt);
+                  db.acceptSnipeDuel(duel.duelId, discordEffectiveGuildId(message.guild.id), acceptedAt, endsAt);
                   const endStr = new Date(endsAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
                   await message.reply({
                     content: L.duelAcceptedPublic(`window closes _${endStr}_`),
@@ -1403,7 +1470,7 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
               }
               if (isCommandBody(lower, "declineduel")) {
                 try {
-                  db.declineSnipeDuel(duel.duelId, message.guild.id);
+                  db.declineSnipeDuel(duel.duelId, discordEffectiveGuildId(message.guild.id));
                   await message.reply({ content: L.duelDeclinedPublic() });
                   opsLog("discord.duel.decline", { duelId: duel.duelId, userId: message.author.id });
                 } catch (e) {

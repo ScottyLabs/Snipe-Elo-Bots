@@ -76,5 +76,13 @@ export const config = {
   server: {
     port: Number(process.env.PORT ?? 3000),
   },
+  sharedGuildId: process.env.SHARED_GUILD_ID?.trim() || null,
+  keycloak: {
+    url:          process.env.KEYCLOAK_URL?.trim()           || null,
+    realm:        process.env.KEYCLOAK_REALM?.trim()         || null,
+    clientId:     process.env.KEYCLOAK_CLIENT_ID?.trim()     || null,
+    clientSecret: process.env.KEYCLOAK_CLIENT_SECRET?.trim() || null,
+    refreshMs:    Number(process.env.KEYCLOAK_REFRESH_INTERVAL_MS ?? 60000),
+  },
 };
 
