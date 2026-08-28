@@ -60,6 +60,7 @@ import {
   cacheDiscordDisplayName,
   canonicalLeaderboardLabel,
   reconcileNullDisplayNames,
+  resolveCanonicalNamesViaDiscord,
 } from "../identityMap";
 
 const DART = "🎯";
@@ -279,7 +280,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
     const { pairMatches: displayPairMatches, playerChanges: displayPlayerChanges } =
       mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
     const ids = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
-    const names = await resolveDiscordDisplayNames(args.guild, ids);
+    const names = (discordConfig.bridgedGuildId && args.guild.id === discordConfig.bridgedGuildId)
+      ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(args.guild, ids), ids)
+      : await resolveDiscordDisplayNames(args.guild, ids);
     if (discordConfig.bridgedGuildId && args.guild.id === discordConfig.bridgedGuildId) {
       for (const [discordId, name] of names) {
         cacheDiscordDisplayName(discordId, name);
@@ -530,7 +533,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           const aToB = db.countDirectedSnipesInWindow(duel.guildId, a, b, since, until);
           const bToA = db.countDirectedSnipesInWindow(duel.guildId, b, a, since, until);
           const now = Date.now();
-          const names = await resolveDiscordDisplayNames(guild, [a, b]);
+          const names = (discordConfig.bridgedGuildId && guild.id === discordConfig.bridgedGuildId)
+            ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(guild, ids), [a, b])
+            : await resolveDiscordDisplayNames(guild, [a, b]);
           const nameOf = (id: string) => escapeDiscordMarkdownChunk(names.get(id) ?? id);
 
           if (aToB === bToA) {
@@ -648,7 +653,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
         const asSniper = db.getRecentSnipesForSniper(discordEffectiveGuildId(interaction.guild.id), target.id, SNIPES_LOG_LIMIT);
         const asSniped = db.getRecentSnipesAsSniped(discordEffectiveGuildId(interaction.guild.id), target.id, SNIPES_LOG_LIMIT);
         const snipeIds = collectIdsForSnipeLog(target.id, asSniper, asSniped);
-        const snipeNames = await resolveDiscordDisplayNames(interaction.guild, snipeIds);
+        const snipeNames = (discordConfig.bridgedGuildId && interaction.guild!.id === discordConfig.bridgedGuildId)
+          ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(interaction.guild!, ids), snipeIds)
+          : await resolveDiscordDisplayNames(interaction.guild!, snipeIds);
         if (discordConfig.bridgedGuildId && interaction.guild.id === discordConfig.bridgedGuildId) {
           for (const [discordId, name] of snipeNames) {
             cacheDiscordDisplayName(discordId, name);
@@ -775,7 +782,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
       try {
         const rows = db.getDirectedSnipePairCounts(discordEffectiveGuildId(interaction.guild!.id));
         const h2hIds = collectIdsFromDirectedPairs(rows);
-        const h2hNames = await resolveDiscordDisplayNames(interaction.guild, h2hIds);
+        const h2hNames = (discordConfig.bridgedGuildId && interaction.guild!.id === discordConfig.bridgedGuildId)
+          ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(interaction.guild!, ids), h2hIds)
+          : await resolveDiscordDisplayNames(interaction.guild!, h2hIds);
         const nameForMatrix = (id: string) => {
           const n = h2hNames.get(id) ?? id;
           return n.replace(/\n/g, " ").trim() || "—";
@@ -855,7 +864,9 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
           snipeIdToUndo: snipe.snipeId,
         });
         const undoIds = undoResult.playerChanges.map((c) => c.playerId);
-        const undoNames = await resolveDiscordDisplayNames(interaction.guild, undoIds);
+        const undoNames = (discordConfig.bridgedGuildId && interaction.guild!.id === discordConfig.bridgedGuildId)
+          ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(interaction.guild!, ids), undoIds)
+          : await resolveDiscordDisplayNames(interaction.guild!, undoIds);
         const undoNameOf = (id: string) => escapeDiscordMarkdownChunk(undoNames.get(id) ?? id);
         await interaction.editReply({
           content: clampDiscordMessageContent(

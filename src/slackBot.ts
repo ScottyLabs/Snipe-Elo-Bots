@@ -1082,12 +1082,13 @@ export async function startSlackBot(params: {
     try {
       const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
       const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
-      const snipeLogIds = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
+      const canonicalTargetUserId = resolveSlackPlayer(targetUserId);
+      const snipeLogIds = collectIdsForSnipeLog(canonicalTargetUserId, asSniper, asSniped);
       const snipeLogNames = config.sharedGuildId
         ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), snipeLogIds)
         : await resolveSlackDisplayNames(client, snipeLogIds);
       const snipeLogNameOf = (id: string) => escapeSlackLeaderboardName(snipeLogNames.get(id) ?? id);
-      const body = formatSlackSnipesList(asSniper, asSniped, snipeLogNameOf(targetUserId), snipeLogNameOf);
+      const body = formatSlackSnipesList(asSniper, asSniped, snipeLogNameOf(canonicalTargetUserId), snipeLogNameOf);
       const parts = chunkSlackText(body);
       await respond({ response_type: "in_channel", text: parts[0] ?? "(empty)" });
       for (let i = 1; i < parts.length; i++) {
@@ -1786,7 +1787,8 @@ export async function startSlackBot(params: {
           try {
             const asSniper = params.db.getRecentSnipesForSniper(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
             const asSniped = params.db.getRecentSnipesAsSniped(slackEffectiveGuildId(), resolveSlackPlayer(targetUserId), SNIPES_LOG_LIMIT);
-            const snipeLogIdsText = collectIdsForSnipeLog(targetUserId, asSniper, asSniped);
+            const canonicalTargetUserIdText = resolveSlackPlayer(targetUserId);
+            const snipeLogIdsText = collectIdsForSnipeLog(canonicalTargetUserIdText, asSniper, asSniped);
             const snipeLogNamesText = config.sharedGuildId
               ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), snipeLogIdsText)
               : await resolveSlackDisplayNames(client, snipeLogIdsText);
@@ -1794,7 +1796,7 @@ export async function startSlackBot(params: {
             const body = formatSlackSnipesList(
               asSniper,
               asSniped,
-              snipeLogNameOfText(targetUserId),
+              snipeLogNameOfText(canonicalTargetUserIdText),
               snipeLogNameOfText
             );
             const chunks = chunkSlackText(body);

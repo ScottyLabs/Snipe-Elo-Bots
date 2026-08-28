@@ -149,6 +149,44 @@ export async function resolveCanonicalNamesViaSlack(
   return result;
 }
 
+// Use in unified mode wherever resolveDiscordDisplayNames is called with canonical IDs.
+// Slack-primary canonicals (slack:SLACKID) have no Discord account; return cached Slack display name.
+// Discord snowflake canonicals resolve normally via Discord API.
+export async function resolveCanonicalNamesViaDiscord(
+  discordResolver: (ids: string[]) => Promise<Map<string, string>>,
+  canonicalIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const discordIds: string[] = [];
+
+  for (const canonical of canonicalIds) {
+    if (canonical.startsWith('slack:')) {
+      // Slack-primary player: no Discord account, use cached Slack display name.
+      const profile = _db.getProfileByCanonical(canonical);
+      result.set(canonical, profile?.slackDisplayName ?? canonical);
+    } else {
+      discordIds.push(canonical);
+    }
+  }
+
+  if (discordIds.length > 0) {
+    const discordNames = await discordResolver(discordIds);
+    for (const [discordId, name] of discordNames) {
+      cacheDiscordDisplayName(discordId, name);
+      result.set(discordId, name);
+    }
+    // Fall back to cached profile for any the Discord API couldn't resolve.
+    for (const discordId of discordIds) {
+      if (!result.has(discordId)) {
+        const profile = _db.getProfileByCanonical(discordId);
+        result.set(discordId, profile?.discordDisplayName ?? profile?.slackDisplayName ?? discordId);
+      }
+    }
+  }
+
+  return result;
+}
+
 // On startup in unified mode: fill in null display names by calling platform resolvers.
 // Each resolver receives raw platform IDs and returns a name map. Call once after bot is ready.
 export async function reconcileNullDisplayNames(resolvers: {
