@@ -45,12 +45,13 @@ export function discordIdForCanonical(canonicalId: string): string | null {
 
 // Persist a manual or Keycloak link. Does NOT merge player scores; call mergePlayerScoresAfterLink separately.
 export function upsertLink(slackId: string, discordId: string, source: 'keycloak' | 'manual'): void {
+  // Delete old 'slack:SLACKID' profile BEFORE upserting the linked row so the UNIQUE
+  // constraint on slack_id doesn't fire (old row owns that value).
+  _db.deletePlayerProfile(`slack:${slackId}`);
+  canonicalToSlack.delete(`slack:${slackId}`);
   _db.upsertPlayerProfile({ canonicalId: discordId, slackId, discordId, source });
   slackToCanonical.set(slackId, discordId);
   canonicalToSlack.set(discordId, slackId);
-  // Remove stale 'slack:slackId' profile entry now that canonical is discordId.
-  _db.deletePlayerProfile(`slack:${slackId}`);
-  canonicalToSlack.delete(`slack:${slackId}`);
 }
 
 // Called after upsertLink; merges player scores for the newly linked pair.
