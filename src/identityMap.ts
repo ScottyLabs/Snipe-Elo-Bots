@@ -263,6 +263,7 @@ async function _refreshFromKeycloak(
 
   // Get client-credentials token.
   let token: string;
+  opsLog('identityMap.keycloak.tokenFetch', { url });
   try {
     const res = await fetch(
       `${url}/realms/${realm}/protocol/openid-connect/token`,
@@ -274,6 +275,7 @@ async function _refreshFromKeycloak(
           client_id: clientId,
           client_secret: clientSecret,
         }),
+        signal: AbortSignal.timeout(30000),
       }
     );
     if (!res.ok) { opsLog('identityMap.keycloak.tokenError', { status: res.status }); return; }
@@ -295,7 +297,7 @@ async function _refreshFromKeycloak(
       try {
         const r = await fetch(
           `${url}/admin/realms/${realm}/users?idpAlias=${alias}&first=${first}&max=100`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
         );
         if (!r.ok) { opsLog('identityMap.keycloak.userPageError', { alias, status: r.status }); break; }
         page = await r.json() as Array<{ id: string }>;
@@ -305,7 +307,7 @@ async function _refreshFromKeycloak(
         try {
           const fr = await fetch(
             `${url}/admin/realms/${realm}/users/${user.id}/federated-identity`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
           );
           if (!fr.ok) continue;
           const feds = await fr.json() as Array<{ identityProvider: string; userId: string }>;
