@@ -1,5 +1,6 @@
 import type { EloDb } from "./db";
 import { opsLog } from "./opsLog";
+import { config } from "./config";
 
 let _db: EloDb;
 // In-memory cache: slackId -> canonicalId (Discord snowflake or 'slack:SLACKID')
@@ -318,13 +319,20 @@ async function _refreshFromKeycloak(
   }
 
   // Link users that have both Discord and Slack IDs.
+  // If the link is new (not already in memory), merge player scores in the shared guild.
   let count = 0;
+  let merged = 0;
   for (const [kcId, discordId] of discordMap) {
     const slackId = slackMap.get(kcId);
     if (slackId) {
+      const alreadyLinked = slackToCanonical.get(slackId) === discordId;
       upsertLink(slackId, discordId, 'keycloak');
+      if (!alreadyLinked && config.sharedGuildId) {
+        mergePlayerScoresAfterLink(_db, config.sharedGuildId, slackId, discordId);
+        merged++;
+      }
       count++;
     }
   }
-  opsLog('identityMap.keycloak.refresh', { count });
+  opsLog('identityMap.keycloak.refresh', { count, merged });
 }
