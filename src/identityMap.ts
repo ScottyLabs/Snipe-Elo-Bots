@@ -239,12 +239,19 @@ function _startKeycloakRefreshLoop(): void {
   const realm        = process.env.KEYCLOAK_REALM?.trim();
   const clientId     = process.env.KEYCLOAK_CLIENT_ID?.trim();
   const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET?.trim();
-  if (!url || !realm || !clientId || !clientSecret) return;
-
+  if (!url || !realm || !clientId || !clientSecret) {
+    opsLog('identityMap.keycloak.skipped', { url: !!url, realm: !!realm, clientId: !!clientId, clientSecret: !!clientSecret });
+    return;
+  }
+  opsLog('identityMap.keycloak.starting', { url, realm, clientId });
   const intervalMs = Number(process.env.KEYCLOAK_REFRESH_INTERVAL_MS ?? 60000);
-  _refreshFromKeycloak(url, realm, clientId, clientSecret).catch(() => {});
+  _refreshFromKeycloak(url, realm, clientId, clientSecret).catch((e: unknown) => {
+    opsLog('identityMap.keycloak.refreshError', { error: String(e) });
+  });
   setInterval(() => {
-    _refreshFromKeycloak(url, realm, clientId, clientSecret).catch(() => {});
+    _refreshFromKeycloak(url, realm, clientId, clientSecret).catch((e: unknown) => {
+      opsLog('identityMap.keycloak.refreshError', { error: String(e) });
+    });
   }, intervalMs).unref();
 }
 
