@@ -783,7 +783,7 @@ export async function startSlackBot(params: {
 
     const { pairMatches: displayPairMatches, playerChanges: displayPlayerChanges } =
       mirrorExusiaiAprilFoolsSnipeDisplay(result.pairMatches, result.playerChanges);
-    const snipeIds = collectIdsForSnipeConfirmation(args.sniperId, displayPairMatches, displayPlayerChanges);
+    const snipeIds = collectIdsForSnipeConfirmation(resolveSlackPlayer(args.sniperId), displayPairMatches, displayPlayerChanges);
     const snipeNames = config.sharedGuildId
       ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(app.client, ids), snipeIds)
       : await resolveSlackDisplayNames(app.client, snipeIds);
@@ -814,7 +814,7 @@ export async function startSlackBot(params: {
 
     const confirmationText = formatSnipeConfirmation({
       kind: args.type === "makeup" ? "makeup" : "snipe",
-      sniperId: args.sniperId,
+      sniperId: resolveSlackPlayer(args.sniperId),
       pairMatches: displayPairMatches,
       playerChanges: displayPlayerChanges,
       nameOf,
