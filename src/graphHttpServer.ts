@@ -45,12 +45,12 @@ function graphPublicDir(): string {
   return path.join(__dirname, "..", "public", "graph");
 }
 
-function json(res: http.ServerResponse, status: number, body: unknown): void {
+function json(res: http.ServerResponse, status: number, body: unknown, cacheControl = "no-store"): void {
   const s = JSON.stringify(body);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(s),
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
   });
   res.end(s);
 }
@@ -138,7 +138,7 @@ export async function handleGraphSiteRequest(
         return;
       }
       const ext = path.extname(resolved).toLowerCase();
-      res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream", "Cache-Control": "no-store" });
+      res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream", "Cache-Control": "max-age=300" });
       res.end(buf);
     });
   };
@@ -223,7 +223,7 @@ export async function handleGraphSiteRequest(
         to: r.snipedId,
         count: r.count,
       }));
-      json(res, 200, { guildId, guildName, nodes, edges });
+      json(res, 200, { guildId, guildName, nodes, edges }, "max-age=60");
       return;
     }
 

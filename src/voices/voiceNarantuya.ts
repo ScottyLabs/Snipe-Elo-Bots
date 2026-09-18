@@ -161,9 +161,6 @@ export function snipesFailed(error: string): string {
   return `The logbook got buried: ${error}`;
 }
 
-export function headtoheadFailed(error: string): string {
-  return `Head-to-head's lost in a mirage right now: ${error}`;
-}
 
 export function snipeDuelUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points. Show me your swagger.`;
@@ -589,7 +586,6 @@ export const discordSlashDescriptions = {
   adjustbounty: "Edit bounty ledger, append marks, or remove marks from today's list (moderators).",
   setsnipechannel: "Set this camp's snipe channel to the current channel (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
-  headtohead: "Pairwise snipe counts for everyone still walking the dunes.",
   snipeduel: "Challenge someone to a timed snipe duel with an ELO stake. Show your swagger.",
   bounty: "Today's bounty marks and whether each 2× treasure is still open.",
   snipegraph: "Get a 1-minute code to open the live snipe sky-chart for this camp in the browser.",

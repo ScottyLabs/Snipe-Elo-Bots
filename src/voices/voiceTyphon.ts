@@ -158,9 +158,6 @@ export function snipesFailed(error: string): string {
   return `The hunting log is frozen: ${error}`;
 }
 
-export function headtoheadFailed(error: string): string {
-  return `The pack's history is obscured: ${error}`;
-}
 
 export function snipeDuelUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points.`;
@@ -586,7 +583,6 @@ export const discordSlashDescriptions = {
   adjustbounty: "Edit the Great Hunt's marks and catches.",
   setsnipechannel: "Mark this ground for the hunt.",
   snipes: "Your recent catches and times you were prey.",
-  headtohead: "The history of the pack's clashes.",
   snipeduel: "Challenge another hunter to a duel.",
   bounty: "See the prey marked for the Great Hunt.",
   snipegraph: "Open the map of all tracks in the snow.",

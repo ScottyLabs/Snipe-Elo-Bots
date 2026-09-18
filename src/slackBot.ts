@@ -37,8 +37,6 @@ import {
   reconcileNullDisplayNames,
   resolveCanonicalNamesViaSlack,
 } from "./identityMap";
-import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "./headToHead";
-import { renderHeadToHeadMatrixPng } from "./headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatSlackSnipesList } from "./snipeHistory";
 import {
   collectActiveDuelsForSnipe,
@@ -48,7 +46,7 @@ import {
   formatDurationLabel,
   parseDurationToMs,
 } from "./snipeDuel";
-import { L } from "./voice";
+import { L } from "./voices/voice";
 import { calendarDateKeyInTimeZone, formatBountyDateLabel } from "./bounty";
 import { appendManualBountyTargets, applyManualBountyTargets, removeManualBountyTargets } from "./bountyManual";
 import { bountyEnv } from "./bountyEnv";
@@ -232,32 +230,6 @@ async function postSlackLeaderboardMessage(
   }
 }
 
-const HEADTOHEAD_SLACK_FILE_COMMENT =
-  "*Head-to-head*\n_Snipes still on the books (undone rounds removed)._";
-
-/** Uses `files.uploadV2` (legacy `files.upload` is deprecated for new Slack apps). */
-async function uploadHeadToHeadMatrixPng(client: any, args: { channelId: string; threadTs?: string; png: Buffer }): Promise<void> {
-  await client.files.uploadV2({
-    channel_id: args.channelId,
-    ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
-    file: args.png,
-    filename: "head-to-head.png",
-    title: "Head-to-head",
-    initial_comment: HEADTOHEAD_SLACK_FILE_COMMENT,
-  });
-}
-
-/** Head-to-head uploads need `files:write`; legacy `files.upload` also returns `method_deprecated`. */
-function slackHeadtoheadUploadErrorMessage(msg: string): string {
-  const base = L.headtoheadFailed(msg);
-  if (msg.includes("missing_scope")) {
-    return `${base} Add bot scope \`files:write\` (OAuth & Permissions), then reinstall the app to the workspace.`;
-  }
-  if (msg.includes("method_deprecated")) {
-    return `${base} This bot must use \`files.uploadV2\` (deploy the latest code).`;
-  }
-  return base;
-}
 
 function formatSlackHelpText(): string {
   const c = config.slackOps;
@@ -269,7 +241,6 @@ function formatSlackHelpText(): string {
     `• \`${c.slashLeaderboard}\` / \`${c.slashShowLeaderboard}\` — post the leaderboard (paged; use Prev/Next in the message).`,
     `• \`${c.slashSnipes}\` [@user] — last snipes as shooter and as target.`,
     `• \`${c.slashSnipegraph}\` — one-time code to open the snipe network graph in the browser (\`GRAPH_PUBLIC_BASE_URL\` on the host).`,
-    `• \`${c.slashHeadtohead}\` — head-to-head matrix image for active records.`,
     `• \`${c.slashBounty}\` — today's bounty marks and whether each 2× slot is still open.`,
     `• \`${c.slashBounty} recalc\` — rebuild today's marks from the leaderboard and clear all first-snipe (2×) claims (same allowlist as adjustelo).`,
     "",
@@ -1123,43 +1094,6 @@ export async function startSlackBot(params: {
     await handleSlackSnipesSlash(command, respond, client);
   });
 
-  const handleSlackHeadtoheadSlash = async (command: any, respond: (a: any) => Promise<void>, client: any) => {
-    if (command.channel_id !== config.slack.channelId) {
-      await wrongChannelEphemeral(respond);
-      return;
-    }
-    try {
-      const rows = params.db.getDirectedSnipePairCounts(slackEffectiveGuildId());
-      const h2hIds = collectIdsFromDirectedPairs(rows);
-      if (h2hIds.length === 0) {
-        await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
-        return;
-      }
-      const h2hNames = config.sharedGuildId
-        ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), h2hIds)
-        : await resolveSlackDisplayNames(client, h2hIds);
-      const h2hNameOf = (id: string) => escapeSlackLeaderboardName(h2hNames.get(id) ?? id);
-      const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOf });
-      if (!png) {
-        await respond({ response_type: "in_channel", text: HEADTOHEAD_EMPTY });
-        return;
-      }
-      await uploadHeadToHeadMatrixPng(client, { channelId: command.channel_id, png });
-      await respond({
-        response_type: "ephemeral",
-        text: "Posted the head-to-head matrix to the channel.",
-      });
-      opsLog("command.slash.headtohead", { userId: command.user_id });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await respond({ response_type: "ephemeral", text: slackHeadtoheadUploadErrorMessage(msg) });
-    }
-  };
-
-  app.command(config.slackOps.slashHeadtohead, async ({ command, ack, respond, client }) => {
-    await ack();
-    await handleSlackHeadtoheadSlash(command, respond, client);
-  });
 
   app.command(config.slackOps.slashUndo, async ({ command, ack, respond, client }) => {
     await ack();
@@ -1557,7 +1491,7 @@ export async function startSlackBot(params: {
   });
 
   console.log(
-    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashHeadtohead}, ${config.slackOps.slashBounty}, ${config.slackOps.slashPoll}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}, ${config.slackOps.slashAdjustBounty}`
+    `[snipe-elo] Slack slash commands (register these in the Slack app): ${config.slackOps.slashHelp}, ${config.slackOps.slashLeaderboard}, ${config.slackOps.slashShowLeaderboard}, ${config.slackOps.slashSnipes}, ${config.slackOps.slashSnipegraph}, ${config.slackOps.slashBounty}, ${config.slackOps.slashPoll}, ${config.slackOps.slashSnipeDuel}, ${config.slackOps.slashUndo}, ${config.slackOps.slashMakeup}, ${config.slackOps.slashAdjustElo}, ${config.slackOps.slashSetBounty}, ${config.slackOps.slashAdjustBounty}`
   );
 
   const plainCmd = {
@@ -1566,7 +1500,6 @@ export async function startSlackBot(params: {
     showLeaderboard: plainSlackCmd(config.slackOps.slashShowLeaderboard),
     snipes: plainSlackCmd(config.slackOps.slashSnipes),
     snipegraph: plainSlackCmd(config.slackOps.slashSnipegraph),
-    headtohead: plainSlackCmd(config.slackOps.slashHeadtohead),
     bounty: plainSlackCmd(config.slackOps.slashBounty),
     undo: plainSlackCmd(config.slackOps.slashUndo),
     makeup: plainSlackCmd(config.slackOps.slashMakeup),
@@ -1579,7 +1512,7 @@ export async function startSlackBot(params: {
   console.log(
     `[snipe-elo] Undo in a snipe thread: Slack blocks /slash there—type plain \`${plainCmd.undo}\` in the thread (always on).` +
       (config.slackOps.textCommandsFallback
-        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.headtohead} | ${plainCmd.bounty} | ${plainCmd.poll} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainCmd.adjustBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
+        ? ` SLACK_TEXT_COMMANDS_FALLBACK=ON — also plain: ${plainCmd.help} | ${plainCmd.leaderboard} | ${plainCmd.showLeaderboard} | ${plainCmd.snipes} | ${plainCmd.snipegraph} | ${plainCmd.bounty} | ${plainCmd.poll} … · ${plainCmd.makeup} … · ${plainCmd.adjust} … · ${plainCmd.setBounty} … · ${plainCmd.adjustBounty} … · ${plainSlackCmd(config.slackOps.slashSnipeDuel)} …`
         : "")
   );
 
@@ -1822,46 +1755,6 @@ export async function startSlackBot(params: {
           const redeemSeconds = Math.max(1, Math.round((expiresAtMs - Date.now()) / 1000));
           await postEphemeral(L.graphCodeEphemeralSlack({ code, siteUrl, redeemSeconds }));
           opsLog("command.text.snipegraph", { userId, channelId });
-          return;
-        }
-
-        if (isCommandBody(lower, plainCmd.headtohead)) {
-          try {
-            const rows = params.db.getDirectedSnipePairCounts(slackEffectiveGuildId());
-            const h2hIdsText = collectIdsFromDirectedPairs(rows);
-            if (h2hIdsText.length === 0) {
-              await client.chat.postMessage({
-                channel: channelId,
-                ...(threadTs ? { thread_ts: threadTs } : {}),
-                text: HEADTOHEAD_EMPTY,
-              });
-              opsLog("command.text.headtohead", { userId, channelId });
-              return;
-            }
-            const h2hNamesText = config.sharedGuildId
-              ? await resolveCanonicalNamesViaSlack(ids => resolveSlackDisplayNames(client, ids), h2hIdsText)
-              : await resolveSlackDisplayNames(client, h2hIdsText);
-            const h2hNameOfText = (id: string) => escapeSlackLeaderboardName(h2hNamesText.get(id) ?? id);
-            const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: h2hNameOfText });
-            if (!png) {
-              await client.chat.postMessage({
-                channel: channelId,
-                ...(threadTs ? { thread_ts: threadTs } : {}),
-                text: HEADTOHEAD_EMPTY,
-              });
-              return;
-            }
-            await uploadHeadToHeadMatrixPng(client, {
-              channelId,
-              ...(threadTs ? { threadTs } : {}),
-              png,
-            });
-            await postEphemeral("Posted the head-to-head matrix.");
-            opsLog("command.text.headtohead", { userId, channelId });
-          } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            await postEphemeral(slackHeadtoheadUploadErrorMessage(msg));
-          }
           return;
         }
 

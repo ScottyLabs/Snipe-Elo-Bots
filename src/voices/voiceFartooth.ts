@@ -1,17 +1,19 @@
 /**
- * Ray / Iwona Goldenlobster (Arknights): pitsinker calm—"Um", "Yeah", deck/sandbeast/air, practical, gentle.
- * @see https://arknights.wiki.gg/wiki/Ray/Dialogue
+ * Fartooth / Justyna (Arknights): Pinus Sylvestris knight—soft-spoken, wind and distance, earnest apologies.
+ * Verbal tics: "Eh…", "Sorry", "Hm?", "I think?", airflow/wind, "Should be right", "sortie", hesitates then firms up.
+ * @see https://arknights.wiki.gg/wiki/Fartooth/Dialogue
  */
 
 /** Short intro line under the /help title. */
 export function helpCommandPrologue(platform: "slack" | "discord"): string {
   if (platform === "slack") {
     return (
-      "_Um—commands and rules are in the blocks below. Weather's fine outside. No dust cloud, and not a Catastrophe billow in sight~_"
+      "_The files are sorted—eh… commands and rules should be below. If I lined them up wrong, tell me; I'll fix the sight picture. " +
+      "The wind in here's different from home, but I'll listen for drift~_"
     );
   }
   return (
-    "**Ray here.** Below: commands and rules. Weather's fine outside. No dust cloud, and not a Catastrophe billow in sight."
+    "**Fartooth, on the line.** Below: commands and rules for this lane. If anything reads off from long range, say so—I'll re-check."
   );
 }
 
@@ -21,11 +23,11 @@ export function removesnipeDisabledAprilFools(): string | null {
 }
 
 export function helpSnipeUndoLineSlack(slashUndo: string, plainUndo: string): string {
-  return `• \`${slashUndo}\` — scrub a bad lap in a thread. In thread composers, use plain \`${plainUndo}\`.`;
+  return `• \`${slashUndo}\` — undo latest snipe in a thread. In thread composers, use plain \`${plainUndo}\`.`;
 }
 
 export function helpSnipeUndoLineDiscord(): string {
-  return "• `/removesnipe <confirmation_id>` — scrub a bad lap from the board.";
+  return "• `/removesnipe <confirmation_id>` — undo one recorded snipe.";
 }
 
 export function snipeConfirmationHeader(params: {
@@ -36,24 +38,25 @@ export function snipeConfirmationHeader(params: {
 }): string {
   if (params.kind === "makeup") {
     if (params.discord) {
-      return `Makeup snipe filed for ${params.sniperLabel}. This area's clear of danger for now. We're good.`;
+      return `Makeup snipe filed under ${params.sniperLabel}. I went over it twice… should be right this time, I think?`;
     }
-    return `Makeup logged for ${params.sniperLabel}. This area's clear of danger for now. Yeah, that's the lot.`;
+    return `Makeup for ${params.sniperLabel} is in the record. The paperwork's thorough—you see?`;
   }
   const lines = [
-    `Threat at my position—yeah, not anymore soon. ${params.sniperLabel} takes the credit. Splits are on file.`,
-    `I'm hearing movement. ${params.sniperLabel} takes the credit. Splits are on file.`,
-    `And that's as far as you go. ${params.sniperLabel} takes the credit. Splits are on file.`
+    `The winds are stirring. I can tell. ${params.sniperLabel} is credited.`,
+    `I've locked onto you. ${params.sniperLabel} takes the shot.`,
+    `There's no need to talk in battle. ${params.sniperLabel} claims the mark.`
   ];
-  return lines[Math.floor(Math.random() * lines.length)];
+  const selected = lines[Math.floor(Math.random() * lines.length)];
+  return `${selected}\nhttps://tenor.com/sA5x3eoWsal.gif`;
 }
 
 export function snipeConfirmationExchangeHeading(): string {
-  return "Tracks and exchange—fine visibility. I can see more than just danger:";
+  return "Exchange of fire—listen for the wind:";
 }
 
 export function snipeConfirmationStandingsHeading(): string {
-  return "Leaderboard snapshot—breathe easy:";
+  return "Standings—for the moment, from here:";
 }
 
 /** No-op for default voice; Exusiai appends a mirror disclaimer on snipe confirmations. */
@@ -62,30 +65,30 @@ export function snipeConfirmationAprilFoolsMirrorDisclaimer(_platform: "slack" |
 }
 
 export function wrongSnipeChannel(channelRef: string): string {
-  return `Wrong pit, Doctor—I'm only timing ${channelRef}. One min, hop over.`;
+  return `Hm? This isn't the nest I mapped. Could we run it in ${channelRef}? I only keep score where I'm calibrated.`;
 }
 
 export function serverNotConfigured(): string {
-  return `No snipe lane on the schedule yet—mods need to stake it. Sandbeast and I'll wait.`;
+  return `No snipe lane on my chart yet… Someone with keys will need to draw it in first. Sorry.`;
 }
 
 export function removesnipeNeedSlackThread(): string {
   return (
-    `Undo needs the snipe *thread*—Slack won't do slash from thread composers.` +
-    ` Open it, plain \`removesnipe\`, no slash. That's the drill.`
+    `Undo needs the snipe *thread*. Slack won't fire slash commands from thread composers—` +
+    `open that thread and send plain \`removesnipe\` (no slash). That's the reliable path… I think?`
   );
 }
 
 export function removesnipeNothingInThread(): string {
-  return `Nothing to scrub—clean sheet or wrong garage. Happens.`;
+  return `Nothing to undo—clean page, or we're reading the wrong one. I've been there.`;
 }
 
 export function removesnipeUndoAckEphemeral(): string {
-  return `Undone. And that's as far as you go. Particulars are in the thread.`;
+  return `Done. Particulars are in the thread—I'll stay alert if the numbers still bother you.`;
 }
 
 export function removesnipeFailed(error: string): string {
-  return `Um, undo didn't take. Was I not meant to dodge that?: ${error}`;
+  return `Please, this is no time for excuses—and undo didn't take: ${error}`;
 }
 
 /** Maps known DB errors to readable copy; keeps raw detail out of chat when we have a stable explanation. */
@@ -93,7 +96,7 @@ export function formatRemovesnipeError(error: string): string {
   if (error.includes("cannot_undo_out_of_date_state")) {
     return (
       `I can't roll that snipe back safely—the numbers moved on after it was recorded ` +
-      `(another snipe, a makeup, a duel, or a manual adjust). ` +
+      `(another snipe, a makeup, a duel, or a manual ELO adjust). ` +
       `Undo only works when everyone's current rating still matches what we had right after that shot. ` +
       `If the books truly need fixing, someone with the keys can set ratings with the adjust command.`
     );
@@ -106,15 +109,15 @@ export function makeupUsage(slashCommand: string): string {
 }
 
 export function makeupParseSniperFail(): string {
-  return `Um, I couldn't read the shooter—try a mention like <@U123>?`;
+  return `Hm? I couldn't parse the shooter—could you use a proper mention, like <@U123>?`;
 }
 
 export function makeupRootMessage(callerDisplayName: string, slashCommand: string): string {
-  return `${callerDisplayName} called \`${slashCommand}\`—full readout's threading under it.`;
+  return `${callerDisplayName} called \`${slashCommand}\`. The rest threads underneath—I'll sort it, line up… sortie when you're ready.`;
 }
 
 export function makeupSuccessEphemeral(): string {
-  return `On the board. Thread's got the long version. Sun's out. What a beauty... Sandbeast, let's get home.`;
+  return `It's logged. Full particulars are under that message—review when you have a moment, if you please.`;
 }
 
 export function makeupCommandFailed(slashCommand: string, error: string): string {
@@ -126,7 +129,7 @@ export function adjustUsage(slashCommand: string): string {
 }
 
 export function adjustParseUserFail(): string {
-  return `That user token won't parse. Use a member mention, a raw member id (U…), or their Slack @handle.`;
+  return `That user token won't parse. Use a member mention, a raw member id (U…), or their Slack @handle (workspace username).`;
 }
 
 export function adjustDeltaInvalid(got: string): string {
@@ -134,7 +137,7 @@ export function adjustDeltaInvalid(got: string): string {
 }
 
 export function adjustSuccessEphemeral(): string {
-  return `Numbers updated, canvas too—we're green. Doctor, you always been like this? Any problem, you'll solve it?`;
+  return `You've done well, Doctor. This is a glorious victory. Books and canvas updated. Shall we call that settled?`;
 }
 
 export function adjustCommandFailed(slashCommand: string, error: string): string {
@@ -142,11 +145,11 @@ export function adjustCommandFailed(slashCommand: string, error: string): string
 }
 
 export function adjustEloForbidden(): string {
-  return `That adjust isn't yours—crew lead only, yeah?`;
+  return `That lever isn't on your console—manual ELO belongs to whoever holds the real keys. Sorry.`;
 }
 
 export function leaderboardFailed(error: string): string {
-  return `Roster fell over: ${error}. Comms might cut out. If things get grim, I'll leave the most discernible signs I can.`;
+  return `The roster slipped through my fingers… wind must've tugged it: ${error}`;
 }
 
 /** Appended when Block Kit post fails but pagination was intended (plain-text fallback has no buttons). */
@@ -155,27 +158,24 @@ export function slackLeaderboardPagingInteractivityHint(): string {
 }
 
 export function snipesFailed(error: string): string {
-  return `Logbook jammed: ${error}`;
+  return `The logbook jammed—sorry: ${error}`;
 }
 
-export function headtoheadFailed(error: string): string {
-  return `Head-to-head's locked up for the moment: ${error}`;
-}
 
 export function snipeDuelUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points.`;
 }
 
 export function snipeDuelDurationInvalid(): string {
-  return `That duration doesn't parse. Use something like \`30m\`, \`4h\`, \`7d\`, or \`1w\`.`;
+  return `That duration doesn't parse. Use something like \`30m\`, \`4h\`, \`7d\`, or \`1w\` (between 1 minute and 90 days).`;
 }
 
 export function snipeDuelBetInvalid(): string {
-  return `The bet must be a positive whole number of points. Keep it practical.`;
+  return `The bet must be a positive whole number of ELO points (within reason).`;
 }
 
 export function snipeDuelSelf(): string {
-  return `You can't duel yourself—pick someone else on the deck.`;
+  return `You can't duel yourself—pick someone else on the field.`;
 }
 
 export function snipeDuelTargetBot(): string {
@@ -195,11 +195,11 @@ export function duelReplyNotTarget(): string {
 }
 
 export function duelAcceptedPublic(endsSummary: string): string {
-  return `Accepted. I'm hearing movement. The clock is running — ${endsSummary}.`;
+  return `Accepted. The clock is running — ${endsSummary}. Snipes between you two count toward the duel.`;
 }
 
 export function duelDeclinedPublic(): string {
-  return `Declined. I'm done rambling in the dark. Consider the challenge withdrawn.`;
+  return `Declined. No stake, no score—consider the challenge withdrawn.`;
 }
 
 export function duelCancelledByChallengerPublic(): string {
@@ -212,7 +212,7 @@ export function duelCancelNotChallenger(): string {
 }
 
 export function leaderboardEmptyFallback(): string {
-  return "_Quiet deck—nobody's clocked a time. First one's gonna feel good._";
+  return "_The board's quiet—no shots on record. That can change the moment someone lines up…_";
 }
 
 export function discordInvalidConfirmationId(): string {
@@ -224,7 +224,7 @@ export function discordNothingToUndo(): string {
 }
 
 export function discordNoSnipedInMakeup(): string {
-  return `Um, I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
+  return `I don't see anyone in the crosshairs. Add @mentions in the sniped field—@alice @bob, and so on.`;
 }
 
 export function implicitSnipeOnlySelfSlack(): string {
@@ -239,7 +239,7 @@ export function implicitSnipeOnlySelfDiscord(): string {
 }
 
 export function implicitSnipeProcessFailed(error: string): string {
-  return `Something fouled the shot. We'll have to expand the mine out... Got a lurking threat to handle: ${error}`;
+  return `Something fouled the shot: ${error}`;
 }
 
 export function snipeImplicitBotsOnlySlack(): string {
@@ -259,7 +259,7 @@ export function adjustTargetIsBot(): string {
 }
 
 export function discordModeratorOnlyCommand(): string {
-  return `That switch is locked to crew leads—if you're holding the keys, try again.`;
+  return `That switch is locked to moderators—if you're holding the server keys, try again.`;
 }
 
 export function discordSnipeChannelSet(channelRef: string): string {
@@ -429,7 +429,7 @@ export function setBountyFailed(context: string, msg: string): string {
 }
 
 export function setBountySuccessEphemeral(): string {
-  return "Posted today's bounty marks to the channel—the midnight auto-list won't replace them until the calendar turns.";
+  return "Posted today's bounty marks to the channel. I hope we can win this match fair and square.";
 }
 
 export function adjustBountyUsage(slashPath: string): string {
@@ -546,7 +546,7 @@ export function adjustBountyPublicClaim(
 }
 
 export function adjustBountySuccessEphemeral(): string {
-  return "Posted the bounty ledger change to the channel.";
+  return "Posted the bounty ledger change to the channel. The winds are stirring. I can tell.";
 }
 
 export function adjustBountyFailed(context: string, error: string): string {
@@ -576,8 +576,8 @@ export function graphCodeEphemeralSlack(params: { code: string; siteUrl: string;
 
 /** Discord slash command descriptions (short, her register). */
 export const discordSlashDescriptions = {
-  help: "Deck manual: commands, rules, fair air.",
-  leaderboard: "Who's out front on the board today?",
+  help: "Field brief—commands, rules, the lane. Stay on frequency.",
+  leaderboard: "Glass the standings—who holds the high ground today?",
   show_leaderboard: "Same as /leaderboard—post the ELO standings right here.",
   removesnipe: "Strike a snipe from the record (use the bot confirmation message ID).",
   makeupsnipe: "Log a snipe the camera missed—paperwork for the diligent.",
@@ -586,7 +586,6 @@ export const discordSlashDescriptions = {
   adjustbounty: "Edit bounty ledger, append marks, or remove marks from today's list: unclaim, clear, claim, add, remove (moderators).",
   setsnipechannel: "Set this server's snipe channel to the current channel (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you.",
-  headtohead: "Pairwise snipe counts for everyone still on the books.",
   snipeduel: "Challenge someone to a timed snipe duel with an ELO stake.",
   bounty: "Today's bounty marks and whether each 2× reward is still open.",
   snipegraph: "Get a 1-minute code to open the live snipe graph for this server in the browser.",

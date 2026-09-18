@@ -9,7 +9,7 @@ import {
   takeSlackHumanLeaderboardPaged,
   type SlackInfoClient,
 } from "./slackDisplayNames";
-import { L } from "./voice";
+import { L } from "./voices/voice";
 
 type SlackBountyClient = SlackInfoClient & {
   chat: {
