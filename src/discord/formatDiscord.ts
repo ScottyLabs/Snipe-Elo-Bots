@@ -1,5 +1,5 @@
 import type { PairMatch, PlayerChange } from "../db";
-import { L } from "../voice";
+import { L } from "../voices/voice";
 
 export function formatSigned(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;

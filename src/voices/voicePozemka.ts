@@ -162,9 +162,6 @@ export function snipesFailed(error: string): string {
   return `The logbook failed, Doctor: ${error}. Apologies for the mess.`;
 }
 
-export function headtoheadFailed(error: string): string {
-  return `Head-to-head's locked up for the moment: ${error}. My apologies.`;
-}
 
 export function snipeDuelUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand} @them 7d 50\`. Duration: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet is ELO points, please.`;
@@ -590,7 +587,6 @@ export const discordSlashDescriptions = {
   adjustbounty: "Edit bounty ledger, append marks, or remove marks from today's list, Doctor (moderators).",
   setsnipechannel: "Set this server's snipe channel to the current channel, please (moderators).",
   snipes: "Last five as shooter, last five times sniped—optional user; default you, Doctor.",
-  headtohead: "Pairwise snipe counts for everyone still on the books, Doctor.",
   snipeduel: "Challenge someone to a timed snipe duel with an ELO stake, please.",
   bounty: "Today's bounty marks and whether each 2× reward is still open, Doctor.",
   snipegraph: "Get a 1-minute code to open the live snipe graph for this server in the browser, please.",

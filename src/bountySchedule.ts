@@ -11,7 +11,7 @@ import {
   type SlackInfoClient,
 } from "./slackDisplayNames";
 import { bountyAutoAnnounceShouldSkip, bountyAutoAnnounceTargetsUnchanged } from "./bountyManual";
-import { L } from "./voice";
+import { L } from "./voices/voice";
 import { config } from "./config";
 import { canonicalLeaderboardLabel } from "./identityMap";
 

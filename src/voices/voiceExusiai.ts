@@ -175,9 +175,6 @@ export function snipesFailed(error: string): string {
   return `Log jammed, Leader: ${error}`;
 }
 
-export function headtoheadFailed(error: string): string {
-  return `Head-to-head matrix didn't deploy, Leader: ${error}`;
-}
 
 export function snipeDuelUsage(slashCommand: string): string {
   return `Usage: \`${slashCommand}\` <@opponent> <duration> <bet> — e.g. \`${slashCommand}\` @them 7d 50. Time: \`30m\`, \`2h\`, \`7d\`, \`1w\`. Bet = ELO on the line, Leader!`;
@@ -595,7 +592,6 @@ export const discordSlashDescriptions = {
   adjustbounty: "Ledger, slap marks on, or scrub 'em off: unclaim, clear, claim, add, remove (mods).",
   setsnipechannel: "Point this server's snipe channel here (mods), Leader!",
   snipes: "Last five shots fired, last five caught—optional user; default you, Leader!",
-  headtohead: "Everyone vs everyone snipe counts—matrix style, Leader!",
   snipeduel: "Challenge someone to a timed duel—ELO on the line, Leader!",
   bounty: "Today's bounty marks + who's still worth 2×, Leader!",
   snipegraph: "One-minute code to open the snipe web graph—let's go, Leader!",

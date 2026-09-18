@@ -22,12 +22,12 @@ function hallPublicDir(): string {
   return path.join(__dirname, "..", "public", "hall");
 }
 
-function json(res: http.ServerResponse, status: number, body: unknown): void {
+function json(res: http.ServerResponse, status: number, body: unknown, cacheControl = "no-store"): void {
   const s = JSON.stringify(body);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(s),
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
   });
   res.end(s);
 }
@@ -99,7 +99,7 @@ export async function handleHallOfFameRequest(
         return;
       }
       const ext = path.extname(resolved).toLowerCase();
-      res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream", "Cache-Control": "no-store" });
+      res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream", "Cache-Control": "max-age=300" });
       res.end(buf);
     });
   };

@@ -1,6 +1,5 @@
 import {
   ActionRowBuilder,
-  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   Client,
@@ -18,7 +17,7 @@ import {
 } from "discord.js";
 import type { EloDb } from "../db";
 import { opsLog } from "../opsLog";
-import { L } from "../voice";
+import { L } from "../voices/voice";
 import { discordConfig } from "./configDiscord";
 import { clampDiscordMessageContent } from "./discordMessageContent";
 import {
@@ -41,8 +40,6 @@ import { bountyEnv } from "../bountyEnv";
 import { bountyRecalcSuccessEphemeral, executeDiscordBountyRecalc } from "../bountyRecalc";
 import { formatBountyStatusMessage } from "../bountyCommand";
 import { startDiscordBountyScheduler } from "../bountySchedule";
-import { collectIdsFromDirectedPairs, HEADTOHEAD_EMPTY } from "../headToHead";
-import { renderHeadToHeadMatrixPng } from "../headToHeadSlackImage";
 import { SNIPES_LOG_LIMIT, collectIdsForSnipeLog, formatDiscordSnipesList } from "../snipeHistory";
 import { isCommandBody } from "../slashCommands";
 import {
@@ -65,7 +62,6 @@ import {
 
 const DART = "🎯";
 const SNIPE_CHANNEL_META_KEY = "discord_snipe_channel_id";
-const HEADTOHEAD_EMBED_COLOR = 0x5865f2;
 
 function getGuildSnipeChannelId(db: EloDb, guildId: string): string | null {
   const effectiveId = discordEffectiveGuildId(guildId);
@@ -200,7 +196,6 @@ function formatDiscordHelpText(guild: Guild, db: EloDb): string {
     "**Core commands**",
     "• `/leaderboard` / `/show_leaderboard` — post the standings (paged; Prev/Next on the message).",
     "• `/snipes [player]` — latest snipes as shooter and as target.",
-    "• `/headtohead` — head-to-head matrix image (active records only).",
     "• `/bounty view` — today's bounty marks and whether each 2× reward is still open.",
     "• `/bounty recalc` — rebuild today's marks from the leaderboard and clear all 2× claims (moderators).",
     "• `/snipegraph` — one-time code (1 min) to open the snipe network graph in the browser (`GRAPH_PUBLIC_BASE_URL` on the host).",
@@ -368,9 +363,6 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             .setDescription("Whose snipe log to open (defaults to you)")
             .setRequired(false)
         ),
-      new SlashCommandBuilder()
-        .setName("headtohead")
-        .setDescription(L.discordSlashDescriptions.headtohead),
       new SlashCommandBuilder()
         .setName("bounty")
         .setDescription("Today's bounty list: view marks or recalc from the leaderboard (mods).")
@@ -773,49 +765,6 @@ export async function startDiscordBot(db: EloDb, options?: DiscordBotOptions): P
             content: clampDiscordMessageContent(`Couldn't read the bounty ledger: ${msg}`),
           })
           .catch(() => {});
-      }
-      return;
-    }
-
-    if (interaction.commandName === "headtohead") {
-      await interaction.deferReply();
-      try {
-        const rows = db.getDirectedSnipePairCounts(discordEffectiveGuildId(interaction.guild!.id));
-        const h2hIds = collectIdsFromDirectedPairs(rows);
-        const h2hNames = (discordConfig.bridgedGuildId && interaction.guild!.id === discordConfig.bridgedGuildId)
-          ? await resolveCanonicalNamesViaDiscord(ids => resolveDiscordDisplayNames(interaction.guild!, ids), h2hIds)
-          : await resolveDiscordDisplayNames(interaction.guild!, h2hIds);
-        const nameForMatrix = (id: string) => {
-          const n = h2hNames.get(id) ?? id;
-          return n.replace(/\n/g, " ").trim() || "—";
-        };
-        const png = renderHeadToHeadMatrixPng({ pairRows: rows, nameOf: nameForMatrix });
-        if (png === null) {
-          await interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setColor(HEADTOHEAD_EMBED_COLOR)
-                .setTitle("Head-to-head")
-                .setDescription(HEADTOHEAD_EMPTY),
-            ],
-          });
-        } else {
-          const file = new AttachmentBuilder(png, { name: "head-to-head.png" });
-          await interaction.editReply({
-            files: [file],
-            embeds: [
-              new EmbedBuilder()
-                .setColor(HEADTOHEAD_EMBED_COLOR)
-                .setTitle("Head-to-head")
-                .setDescription("_Snipes still on the books (undone rounds removed)._")
-                .setImage("attachment://head-to-head.png"),
-            ],
-          });
-        }
-        opsLog("discord.headtohead", { guildId: interaction.guild!.id, userId: interaction.user.id });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        await interaction.editReply({ content: clampDiscordMessageContent(L.headtoheadFailed(msg)) });
       }
       return;
     }

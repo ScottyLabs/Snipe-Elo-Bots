@@ -291,45 +291,42 @@ async function _refreshFromKeycloak(
   }
 
   // Collect user IDs that have a Discord or Slack federated identity.
+  // Query only by Discord alias with briefRepresentation=false so each user object includes
+  // all federatedIdentities inline -- eliminates the per-user /federated-identity N+1 calls.
   const discordMap = new Map<string, string>(); // keycloak userId -> discordId
   const slackMap   = new Map<string, string>(); // keycloak userId -> slackId
 
-  for (const alias of [discordAlias, slackAlias]) {
-    let first = 0;
-    while (first < 4000) {
-      let page: Array<{ id: string }> = [];
-      try {
-        const r = await fetch(
-          `${url}/admin/realms/${realm}/users?idpAlias=${alias}&first=${first}&max=100`,
-          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
-        );
-        if (!r.ok) { opsLog('identityMap.keycloak.userPageError', { alias, status: r.status }); break; }
-        page = await r.json() as Array<{ id: string }>;
-      } catch { break; }
+  type KcFedIdentity = { identityProvider: string; userId: string };
+  type KcUser = { id: string; federatedIdentities?: KcFedIdentity[] };
 
-      for (const user of page) {
-        try {
-          const fr = await fetch(
-            `${url}/admin/realms/${realm}/users/${user.id}/federated-identity`,
-            { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
-          );
-          if (!fr.ok) continue;
-          const feds = await fr.json() as Array<{ identityProvider: string; userId: string }>;
-          const discordEntry = feds.find(f => f.identityProvider === discordAlias);
-          const slackEntry   = feds.find(f => f.identityProvider === slackAlias);
-          if (discordEntry) discordMap.set(user.id, discordEntry.userId);
-          if (slackEntry) {
-            const raw = slackEntry.userId;
-            const slackId = raw.includes(':') ? raw.split(':').pop()! : raw;
-            if (/^[UW]/i.test(slackId)) slackMap.set(user.id, slackId);
-          }
-        } catch { /* skip this user */ }
+  let first = 0;
+  while (first < 4000) {
+    let page: KcUser[] = [];
+    try {
+      const r = await fetch(
+        `${url}/admin/realms/${realm}/users?idpAlias=${discordAlias}&first=${first}&max=100&briefRepresentation=false`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }
+      );
+      if (!r.ok) { opsLog('identityMap.keycloak.userPageError', { alias: discordAlias, status: r.status }); break; }
+      page = await r.json() as KcUser[];
+    } catch { break; }
+
+    for (const user of page) {
+      const feds = user.federatedIdentities ?? [];
+      const discordEntry = feds.find(f => f.identityProvider === discordAlias);
+      const slackEntry   = feds.find(f => f.identityProvider === slackAlias);
+      if (discordEntry) discordMap.set(user.id, discordEntry.userId);
+      if (slackEntry) {
+        const raw = slackEntry.userId;
+        const slackId = raw.includes(':') ? raw.split(':').pop()! : raw;
+        if (/^[UW]/i.test(slackId)) slackMap.set(user.id, slackId);
       }
-
-      if (page.length < 100) break;
-      first += 100;
     }
+
+    if (page.length < 100) break;
+    first += 100;
   }
+
 
   // Link users that have both Discord and Slack IDs.
   // If the link is new (not already in memory), merge player scores in the shared guild.

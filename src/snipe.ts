@@ -1,5 +1,5 @@
 import type { PairMatch, PlayerChange } from "./db";
-import { isExusiaiVoiceActive, L } from "./voice";
+import { isExusiaiVoiceActive, L } from "./voices/voice";
 
 /**
  * Exusiai voice: show snipe confirmations with gains/losses mirrored, while `applySnipe` stores real ELO.
